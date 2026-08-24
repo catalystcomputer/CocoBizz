@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="CocoBiz chocolate products and ordering">
+  <title>CocoBiz | Chocolate Collection</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" id="logoButton" href="#" aria-label="CocoBiz">
+      <span class="logo-mark">✦</span>
+      <span>Coco<em>Biz</em></span>
+    </a>
+    <div class="header-actions">
+      <button class="order-button" id="openOrderButton">Order <span id="cartCount">0</span></button>
+      <button class="admin-button hidden" id="adminButton" aria-hidden="true" tabindex="-1">Admin Panel</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="catalogue-header">
+      <p class="eyebrow">Welcome to CocoBiz</p>
+      <h1>Our Chocolate <em>Collection</em></h1>
+      <p>Choose products and place your order directly on WhatsApp.</p>
+    </section>
+
+    <section class="product-search-section">
+      <div class="product-search">
+        <span>⌕</span>
+        <input id="productSearch" type="search" placeholder="Search product..." autocomplete="off">
+      </div>
+    </section>
+
+    <section class="products-section">
+      <div class="product-grid" id="productGrid"></div>
+      <p class="empty-message" id="emptyMessage">No products available yet.</p>
+    </section>
+  </main>
+
+  <div class="bottom-order-bar hidden" id="bottomOrderBar">
+    <span><strong id="bottomCartCount">0</strong> item(s) selected</span>
+    <button class="primary-button" id="bottomOrderButton">Continue Order</button>
+  </div>
+
+  <div class="modal hidden" id="loginModal">
+    <div class="modal-box small-box">
+      <button class="close-button" data-close="loginModal">×</button>
+      <h2>Admin Login</h2>
+      <p class="modal-subtitle">Only CocoBiz admin can manage products.</p>
+      <form id="loginForm">
+        <label for="adminEmail">Admin email</label>
+        <input id="adminEmail" type="email" required autocomplete="username">
+        <label for="adminPassword">Password</label>
+        <input id="adminPassword" type="password" required autocomplete="current-password">
+        <p class="error-message" id="loginError"></p>
+        <button class="primary-button" type="submit">Login</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="adminModal">
+    <div class="modal-box admin-box">
+      <button class="close-button" data-close="adminModal">×</button>
+
+      <div class="admin-heading">
+        <div>
+          <p class="eyebrow">CocoBiz management</p>
+          <h2>Admin Panel</h2>
+        </div>
+        <button class="logout-button" id="logoutButton">Logout</button>
+      </div>
+
+      <div class="admin-tabs">
+        <button class="admin-tab active" id="dashboardTab">Dashboard</button>
+        <button class="admin-tab" id="saleTab">Self Sale</button>
+        <button class="admin-tab" id="productsTab">Products</button>
+        <button class="admin-tab" id="ordersTab">Orders <span id="orderCount">0</span></button>
+      </div>
+
+      <div id="dashboardPanel">
+        <p class="modal-subtitle">आज का हिसाब</p>
+        <div class="sale-summary">
+          <div><small>Total Sale</small><strong id="todaySale">₹0</strong></div>
+          <div><small>Accepted Orders</small><strong id="acceptedOrderTotal">0</strong></div>
+          <div><small>Payment Received</small><strong id="todayPaid">₹0</strong></div>
+          <div><small>उधारी</small><strong id="todayDue">₹0</strong></div>
+        </div>
+        <h3 class="section-title">Accepted Orders</h3>
+        <div class="dashboard-folders" id="acceptedOrderFolders"></div>
+        <h3 class="section-title">Customer-wise हिसाब</h3>
+        <div id="customerAccounts"></div>
+      </div>
+
+      <div id="salePanel" class="hidden">
+        <p class="modal-subtitle">अपनी दुकान की बिक्री यहाँ दर्ज करें।</p>
+
+        <form id="selfSaleForm">
+          <div class="form-group">
+            <label for="saleCustomerName">Existing customer</label>
+            <select id="saleCustomerName">
+              <option value="">New customer</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="newSaleCustomerNameGroup">
+            <label for="newSaleCustomerName">New customer name</label>
+            <input id="newSaleCustomerName" type="text">
+          </div>
+
+          <div class="form-group">
+            <label for="saleCustomerType">Customer type</label>
+            <select id="saleCustomerType" required>
+              <option value="">Choose type</option>
+              <option>Retailer</option>
+              <option>Distributor</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="saleCustomerNumber">Mobile number</label>
+            <input id="saleCustomerNumber" type="tel" pattern="[0-9]{10}" maxlength="10" required>
+          </div>
+
+          <div class="form-group">
+            <label for="saleProduct">Product</label>
+            <select id="saleProduct" required></select>
+          </div>
+
+          <div class="form-group">
+            <label for="saleRate">Rate</label>
+            <input id="saleRate" type="number" min="0" step="0.01" required>
+          </div>
+
+          <div class="form-group">
+            <label for="saleQuantity">Quantity</label>
+            <input id="saleQuantity" type="number" min="1" value="1" required>
+          </div>
+
+          <button class="secondary-button" type="button" id="addSelfSaleProduct">
+            Add Product
+          </button>
+
+          <div id="selfSaleItems"></div>
+          <div id="selfSaleTotal" class="order-grand-total">Total: ₹0.00</div>
+
+          <div class="form-group">
+            <label for="salePayment">Payment method</label>
+            <select id="salePayment" required>
+              <option value="">Choose payment</option>
+              <option>Cash</option>
+              <option>Online</option>
+              <option>Udhari</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="salePaid">Payment received</label>
+            <input id="salePaid" type="number" min="0" step="0.01" value="0" required>
+          </div>
+
+          <button class="primary-button" type="submit">Save Sale</button>
+        </form>
+      </div>
+
+      <div id="productsPanel" class="hidden">
+        <form id="productForm" class="product-form">
+          <input type="hidden" id="productId">
+
+          <div class="form-group full-width">
+            <label for="productName">Product name</label>
+            <input id="productName" required>
+          </div>
+
+          <div class="form-group full-width">
+            <label for="productDescription">Product description</label>
+            <textarea id="productDescription" rows="3" maxlength="300" required></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="actualPrice">Actual price (₹)</label>
+            <input id="actualPrice" type="number" min="0" step="0.01" required>
+          </div>
+
+          <div class="form-group">
+            <label for="salePrice">Sale price (₹)</label>
+            <input id="salePrice" type="number" min="0" step="0.01" required>
+          </div>
+
+          <div class="form-group full-width">
+            <label for="productImage">Product photo</label>
+            <input id="productImage" type="file" accept="image/*">
+          </div>
+
+          <div class="form-actions full-width">
+            <button class="primary-button" type="submit" id="saveButton">Add Product</button>
+            <button class="secondary-button hidden" type="button" id="cancelEdit">Cancel Edit</button>
+          </div>
+        </form>
+
+        <div class="admin-products" id="adminProducts"></div>
+      </div>
+
+      <div id="ordersPanel" class="hidden">
+        <div class="admin-orders" id="adminOrders"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="orderModal">
+    <div class="modal-box order-box">
+      <button class="close-button" data-close="orderModal">×</button>
+      <p class="eyebrow">CocoBiz order</p>
+      <h2>Complete Your Order</h2>
+      <div class="selected-products" id="selectedProducts"></div>
+
+      <form id="orderForm">
+        <div class="form-group">
+          <label for="customerName">Your name</label>
+          <input id="customerName" required>
+        </div>
+
+        <div class="form-group">
+          <label for="customerNumber">Mobile number</label>
+          <input id="customerNumber" type="tel" pattern="[0-9]{10}" maxlength="10" required>
+        </div>
+
+        <div class="form-group">
+          <label for="customerAddress">Delivery address</label>
+          <textarea id="customerAddress" rows="3" required></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="customerType">You are a</label>
+          <select id="customerType" required>
+            <option value="">Select option</option>
+            <option>Retailer</option>
+            <option>Distributor</option>
+          </select>
+        </div>
+
+        <button class="primary-button whatsapp-button" type="submit">
+          Send Order on WhatsApp
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="orderSuccessModal">
+    <div class="modal-box small-box success-box">
+      <div class="success-icon">✓</div>
+      <h2>Order Complete! 🎉</h2>
+      <p class="modal-subtitle">Aapka order successfully receive ho gaya hai.</p>
+      <p class="success-order-text">Order ID: <strong id="successOrderId">—</strong></p>
+      <div class="success-actions">
+        <a class="primary-button" id="successWhatsApp" target="_blank" rel="noopener">💬 Contact</a>
+        <a class="secondary-button" id="successCall">📞 Call</a>
+      </div>
+      <button class="secondary-button success-close" data-close="orderSuccessModal">Done</button>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-brand">
+      <span class="logo">
+        <span class="logo-mark">✦</span>
+        <span>Coco<em>Biz</em></span>
+      </span>
+      <span class="footer-tagline">Quality chocolates for every occasion.</span>
+    </div>
+
+    <div class="contact-details">
+      <a href="tel:7463928290">📞 7463928290</a>
+      <a href="mailto:kunalkrverma5555@gmail.com">✉ kunalkrverma5555@gmail.com</a>
+    </div>
+
+    <span class="copyright">© <span id="year"></span> CocoBiz</span>
+  </footer>
+
+  <script src="script.js"></script>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
