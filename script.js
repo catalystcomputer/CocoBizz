@@ -19,6 +19,7 @@
   let orders = [];
   let cart = {};
   let searchTerm = "";
+  let selfSaleItems = [];
 
   const money = value =>
     `₹${Number(value || 0).toLocaleString("en-IN", {
@@ -303,6 +304,9 @@
     $("productForm")?.addEventListener("submit", saveProduct);
     $("cancelEdit")?.addEventListener("click", resetProductForm);
     $("orderForm")?.addEventListener("submit", submitOrder);
+    $("addSelfSaleProduct")?.addEventListener("click", addSelfSaleProduct);
+    $("selfSaleForm")?.addEventListener("submit", saveSelfSale);
+    $("saleCustomerName")?.addEventListener("change", handleSelfSaleCustomerChange);
 
     $("dashboardTab")?.addEventListener("click", () =>
       showAdminPanel("dashboard")
@@ -655,6 +659,149 @@
     `;
   }
 
+  function handleSelfSaleCustomerChange() {
+    const select = $("saleCustomerName");
+    const customer = orders.find(order => order.customer?.number && order.customer?.name === select?.value)?.customer;
+    const isExisting = Boolean(select?.value);
+
+    $("newSaleCustomerNameGroup")?.classList.toggle("hidden", isExisting);
+    if (isExisting && customer) {
+      $("saleCustomerNumber").value = customer.number || "";
+      $("saleCustomerType").value = customer.type || "";
+      $("newSaleCustomerName").value = customer.name || "";
+    } else if (!isExisting) {
+      $("saleCustomerNumber").value = "";
+      $("saleCustomerType").value = "";
+      $("newSaleCustomerName").value = "";
+    }
+  }
+
+  function renderSelfSaleItems() {
+    const box = $("selfSaleItems");
+    if (!box) return;
+    const total = selfSaleItems.reduce((sum, item) => sum + item.total, 0);
+
+    box.innerHTML = selfSaleItems.length
+      ? selfSaleItems.map((item, index) => `
+          <div class="selected-line cart-line">
+            <div class="cart-product-name"><strong>${escapeHtml(item.name)}</strong><br><small>${money(item.rate)} × ${item.quantity}</small></div>
+            <strong>${money(item.total)}</strong>
+            <button type="button" class="delete-button" data-self-sale-remove="${index}">Delete</button>
+          </div>
+        `).join("")
+      : `<p class="modal-subtitle">अभी कोई product add नहीं किया गया है।</p>`;
+
+    if ($("selfSaleTotal")) $("selfSaleTotal").textContent = `Total: ${money(total)}`;
+
+    box.querySelectorAll("[data-self-sale-remove]").forEach(btn => {
+      btn.onclick = () => {
+        selfSaleItems.splice(Number(btn.dataset.selfSaleRemove), 1);
+        renderSelfSaleItems();
+      };
+    });
+  }
+
+  function addSelfSaleProduct() {
+    const productId = $("saleProduct")?.value;
+    const product = products.find(item => item.id === productId);
+    const rate = Number($("saleRate")?.value);
+    const quantity = Number($("saleQuantity")?.value);
+
+    if (!product) {
+      alert("पहले product चुनें।");
+      return;
+    }
+    if (!Number.isFinite(rate) || rate < 0 || !Number.isInteger(quantity) || quantity < 1) {
+      alert("Rate और quantity सही भरें।");
+      return;
+    }
+
+    const existing = selfSaleItems.find(item => item.productId === productId && Number(item.rate) === rate);
+    if (existing) {
+      existing.quantity += quantity;
+      existing.total = existing.rate * existing.quantity;
+    } else {
+      selfSaleItems.push({
+        productId,
+        name: product.name,
+        rate,
+        quantity,
+        total: rate * quantity
+      });
+    }
+    renderSelfSaleItems();
+    $("saleProduct").value = "";
+    $("saleQuantity").value = "1";
+    $("saleRate").value = "";
+  }
+
+  async function saveSelfSale(event) {
+    event.preventDefault();
+    if (!auth?.currentUser) {
+      alert("Admin login required.");
+      return;
+    }
+    if (!selfSaleItems.length) {
+      alert("कम से कम एक product Add Product से जोड़ें।");
+      return;
+    }
+
+    const existingName = $("saleCustomerName")?.value.trim();
+    const name = existingName || $("newSaleCustomerName")?.value.trim();
+    const number = $("saleCustomerNumber")?.value.trim();
+    const type = $("saleCustomerType")?.value;
+    const total = selfSaleItems.reduce((sum, item) => sum + item.total, 0);
+    const paid = Number($("salePaid")?.value || 0);
+
+    if (!name || !/^[0-9]{10}$/.test(number) || !type) {
+      alert("Customer name, valid 10-digit mobile और customer type भरें।");
+      return;
+    }
+    if (!Number.isFinite(paid) || paid < 0 || paid > total) {
+      alert("Payment received amount सही भरें।");
+      return;
+    }
+
+    const sale = {
+      clientId: `SELF-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+      createdAt: Date.now(),
+      date: new Date().toLocaleString("en-IN"),
+      source: "self-sale",
+      status: paid >= total ? "received" : "accepted",
+      customer: { name, number, type, address: "" },
+      items: selfSaleItems.map(item => ({ id: item.productId, name: item.name, quantity: item.quantity, price: item.rate, total: item.total })),
+      total,
+      originalTotal: total,
+      returnedTotal: 0,
+      netTotal: total,
+      paidAmount: paid,
+      dueAmount: Math.max(0, total - paid),
+      paymentMethod: $("salePayment")?.value || "Manual",
+      paymentHistory: paid > 0 ? [{
+        amount: paid,
+        date: new Date().toLocaleDateString("en-IN"),
+        time: new Date().toLocaleTimeString("en-IN"),
+        timestamp: Date.now(),
+        method: $("salePayment")?.value || "Manual"
+      }] : []
+    };
+
+    try {
+      await db.collection("orders").add(sale);
+      selfSaleItems = [];
+      $("selfSaleForm")?.reset();
+      $("newSaleCustomerNameGroup")?.classList.remove("hidden");
+      renderSelfSaleItems();
+      await loadOrders();
+      renderOrders();
+      renderSalesDashboard();
+      fillCustomers();
+      alert("Self Sale successfully save हो गई।");
+    } catch (error) {
+      alert(`Self Sale save नहीं हुई: ${errorText(error)}`);
+    }
+  }
+
   async function submitOrder(event) {
     event.preventDefault();
     if (window.__cocoOrderWorking) return;
@@ -689,7 +836,8 @@
       netTotal: total,
       paidAmount: 0,
       dueAmount: total,
-      paymentMethod: "WhatsApp"
+      paymentMethod: "WhatsApp",
+      paymentHistory: []
     };
 
     const saveCloud = async () => {
@@ -789,6 +937,8 @@
           const returned = Array.isArray(order.returns) ? order.returns : [];
           const returnedTotal = Number(order.returnedTotal || returned.reduce((x, r) => x + Number(r.total || 0), 0));
           const netTotal = Number(order.netTotal ?? (Number(order.total || 0) - returnedTotal));
+          const paid = Number(order.paidAmount || 0);
+          const due = Math.max(0, Number(order.dueAmount ?? netTotal - paid));
 
           return `
           <div class="admin-order" data-order-card="${escapeHtml(order.id)}">
@@ -827,12 +977,13 @@
             <div class="order-grand-total">
               Original: ${money(order.total)}<br>
               ${returnedTotal ? `Returned: -${money(returnedTotal)}<br>` : ""}
-              <strong>Net Total: ${money(netTotal)}</strong>
+              <strong>Net Total: ${money(netTotal)}</strong><br>
+              <span>Paid: ${money(paid)} · Due: ${money(due)}</span>
             </div>
 
             <div class="admin-order-actions">
               ${order.status !== "accepted" && order.status !== "received" ? `<button class="primary-button" data-accept-order="${escapeHtml(order.id)}">✓ Accept Order</button>` : ""}
-              <button class="secondary-button" data-payment-order="${escapeHtml(order.id)}">💰 Received Payment</button>
+              ${due > 0 ? `<button class="secondary-button" data-payment-order="${escapeHtml(order.id)}">💰 Received Payment</button>` : ""}
               <button class="secondary-button" data-return-order="${escapeHtml(order.id)}">↩ Return Item</button>
               <button class="secondary-button" data-bill-order="${escapeHtml(order.id)}">🧾 Bill</button>
               <a class="secondary-button" href="tel:${escapeHtml(order.customer?.number || "")}">☎ Contact</a>
@@ -883,12 +1034,22 @@
 
     const paidAmount = alreadyPaid + amount;
     const dueAmount = Math.max(0, netTotal - paidAmount);
+    const paymentEntry = {
+      amount,
+      date: new Date().toLocaleDateString("en-IN"),
+      time: new Date().toLocaleTimeString("en-IN"),
+      timestamp: Date.now(),
+      method: "Manual"
+    };
+    const paymentHistory = [...(order.paymentHistory || []), paymentEntry];
+
     try {
       await db.collection("orders").doc(orderId).update({
         paidAmount,
         dueAmount,
         paymentReceived: true,
         paymentReceivedAt: Date.now(),
+        paymentHistory,
         status: dueAmount === 0 ? "received" : (order.status || "accepted"),
         updatedAt: Date.now()
       });
@@ -914,37 +1075,105 @@
     }
   }
 
+  function customerKey(order) {
+    return String(order.customer?.number || order.customer?.name || "unknown").trim().toLowerCase();
+  }
+
   function renderAcceptedOrderFolders() {
     const box = $("acceptedOrderFolders");
     if (!box) return;
 
     const accepted = orders.filter(order => ["accepted", "received"].includes(order.status));
-    if (!accepted.length) {
-      box.innerHTML = `<div class="folder-empty">📁 अभी कोई accepted order नहीं है।</div>`;
-      if ($("acceptedOrderTotal")) $("acceptedOrderTotal").textContent = "0";
+    const groups = new Map();
+
+    accepted.forEach(order => {
+      const key = customerKey(order);
+      if (!groups.has(key)) {
+        groups.set(key, {
+          customer: order.customer || {},
+          orders: []
+        });
+      }
+      groups.get(key).orders.push(order);
+    });
+
+    if ($("acceptedOrderTotal")) $("acceptedOrderTotal").textContent = groups.size;
+
+    if (!groups.size) {
+      box.innerHTML = `<div class="folder-empty">📁 अभी कोई accepted customer नहीं है।</div>`;
       return;
     }
 
-    if ($("acceptedOrderTotal")) $("acceptedOrderTotal").textContent = accepted.length;
-    box.innerHTML = accepted.map(order => `
-      <div class="order-folder">
-        <div class="folder-icon">📁</div>
-        <div class="folder-content">
-          <strong>${escapeHtml(order.customer?.name || "Customer")}</strong>
-          <small>Order #${escapeHtml(order.id)} · ${escapeHtml(order.date || "")}</small>
-          <small>${(order.items || []).map(i => `${escapeHtml(i.name)} × ${i.quantity}`).join(" • ")}</small>
-          <b>${money(order.netTotal ?? order.total)} · ${escapeHtml(order.status || "accepted")}</b>
-        </div>
-        <button class="secondary-button" data-dashboard-order="${escapeHtml(order.id)}">View</button>
-      </div>
-    `).join("");
+    box.innerHTML = [...groups.entries()].map(([key, group]) => {
+      const total = group.orders.reduce((sum, o) => sum + Number(o.netTotal ?? o.total ?? 0), 0);
+      const paid = group.orders.reduce((sum, o) => sum + Number(o.paidAmount || 0), 0);
+      const due = Math.max(0, total - paid);
+      const encoded = encodeURIComponent(key);
 
-    box.querySelectorAll("[data-dashboard-order]").forEach(button => {
-      button.onclick = () => {
-        showAdminPanel("orders");
-        setTimeout(() => document.querySelector(`[data-order-card="${CSS.escape(button.dataset.dashboardOrder)}"]`)?.scrollIntoView({behavior:"smooth", block:"center"}), 50);
-      };
+      return `
+        <div class="order-folder customer-folder">
+          <div class="folder-icon">📁</div>
+          <div class="folder-content">
+            <strong>${escapeHtml(group.customer.name || "Customer")}</strong>
+            <small>📞 ${escapeHtml(group.customer.number || "No mobile")}</small>
+            <small>${group.orders.length} accepted order(s)</small>
+            <b>Due: ${money(due)}</b>
+          </div>
+          <button class="secondary-button" data-customer-folder="${encoded}">Open</button>
+        </div>`;
+    }).join("");
+
+    box.querySelectorAll("[data-customer-folder]").forEach(button => {
+      button.onclick = () => openCustomerAccount(decodeURIComponent(button.dataset.customerFolder));
     });
+  }
+
+  function openCustomerAccount(key) {
+    const accepted = orders.filter(order =>
+      ["accepted", "received"].includes(order.status) && customerKey(order) === key
+    );
+    if (!accepted.length) return;
+
+    const customer = accepted[0].customer || {};
+    const total = accepted.reduce((sum, o) => sum + Number(o.netTotal ?? o.total ?? 0), 0);
+    const paid = accepted.reduce((sum, o) => sum + Number(o.paidAmount || 0), 0);
+    const due = Math.max(0, total - paid);
+
+    const modal = $("customerAccountModal");
+    const body = $("customerAccountBody");
+    if (!modal || !body) return;
+
+    body.innerHTML = `
+      <div class="account-head">
+        <div><h2>${escapeHtml(customer.name || "Customer")}</h2>
+        <p>${escapeHtml(customer.number || "")}<br>${escapeHtml(customer.address || "")}</p></div>
+        <div class="account-summary">
+          <div><small>Total</small><b>${money(total)}</b></div>
+          <div><small>Paid</small><b>${money(paid)}</b></div>
+          <div><small>Due</small><b>${money(due)}</b></div>
+        </div>
+      </div>
+
+      ${accepted.map(order => {
+        const orderTotal = Number(order.netTotal ?? order.total ?? 0);
+        const orderPaid = Number(order.paidAmount || 0);
+        const orderDue = Math.max(0, orderTotal - orderPaid);
+        const history = Array.isArray(order.paymentHistory) ? order.paymentHistory : [];
+        return `
+          <div class="account-order">
+            <div class="order-heading-row">
+              <div><strong>Order #${escapeHtml(order.id)}</strong><small>${escapeHtml(order.date || "")}</small></div>
+              <span class="status-badge">${escapeHtml(order.status || "")}</span>
+            </div>
+            ${(order.items || []).map(i => `<div class="selected-line"><span>${escapeHtml(i.name)} × ${i.quantity}</span><b>${money(i.total)}</b></div>`).join("")}
+            <div class="order-grand-total">Order Total: ${money(orderTotal)} · Paid: ${money(orderPaid)} · <strong>Due: ${money(orderDue)}</strong></div>
+            <h4>💰 Payment History</h4>
+            ${history.length ? history.map(p => `<div class="payment-history-row"><span>${escapeHtml(p.date)} ${escapeHtml(p.time)}</span><b>${money(p.amount)}</b><small>${escapeHtml(p.method || "Payment")}</small></div>`).join("") : `<p class="modal-subtitle">No payment received yet.</p>`}
+          </div>`;
+      }).join("")}
+    `;
+
+    modal.classList.remove("hidden");
   }
 
   async function processReturn(orderId) {
@@ -1022,51 +1251,143 @@
 
     const returned = Array.isArray(order.returns) ? order.returns : [];
     const returnedTotal = Number(order.returnedTotal || 0);
-    const netTotal = Number(order.netTotal ?? Number(order.total || 0) - returnedTotal);
+    const originalTotal = Number(order.originalTotal ?? order.total ?? 0);
+    const netTotal = Number(order.netTotal ?? Math.max(0, originalTotal - returnedTotal));
+    const paid = Number(order.paidAmount || 0);
+    const due = Math.max(0, Number(order.dueAmount ?? netTotal - paid));
+    const history = Array.isArray(order.paymentHistory) ? order.paymentHistory : [];
+    const status = order.status || "accepted";
+    const customer = order.customer || {};
+    const orderDate = order.date || new Date(order.createdAt || Date.now()).toLocaleString("en-IN");
 
     const rows = (order.items || []).map(item => `
-      <tr><td>${escapeHtml(item.name)}</td><td>${item.quantity}</td><td>${money(item.total)}</td></tr>
+      <tr>
+        <td>${escapeHtml(item.name)}</td>
+        <td class="text-center">${Number(item.quantity || 0)}</td>
+        <td class="text-right">${Number(item.total || 0).toFixed(2)}</td>
+      </tr>
     `).join("");
 
     const returnRows = returned.map(item => `
-      <tr class="returned"><td>${escapeHtml(item.name)} (Returned)</td><td>-${item.quantity}</td><td>-${money(item.total)}</td></tr>
+      <tr class="returned-row">
+        <td>${escapeHtml(item.name)} <span class="return-label">(Returned)</span></td>
+        <td class="text-center">-${Number(item.quantity || 0)}</td>
+        <td class="text-right">-${Number(item.total || 0).toFixed(2)}</td>
+      </tr>
     `).join("");
 
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>CocoBiz Bill ${escapeHtml(order.id)}</title>
-      <style>
-        body{font-family:Arial,sans-serif;padding:30px;color:#3b211b}main{max-width:800px;margin:auto}
-        header{display:flex;justify-content:space-between;border-bottom:2px solid #3b211b;padding-bottom:15px}
-        table{width:100%;border-collapse:collapse;margin-top:25px}th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left}
-        td:last-child,th:last-child{text-align:right}.returned{color:#a33}.total{text-align:right;font-size:22px;font-weight:bold;margin-top:18px}
-        .muted{color:#777}@media print{button{display:none}}
-      </style></head><body><main>
-      <header><div><h1>✦ CocoBiz</h1><div>Quality chocolates for every occasion</div></div>
-      <div>Bill To:<br><b>${escapeHtml(order.customer?.name || "Customer")}</b><br>${escapeHtml(order.customer?.number || "")}<br>${escapeHtml(order.customer?.address || "")}</div></header>
-      <p class="muted">Order ID: ${escapeHtml(order.id)}<br>Date: ${escapeHtml(order.date || "")}</p>
-      <table><thead><tr><th>Product</th><th>Qty</th><th>Amount</th></tr></thead><tbody>${rows}${returnRows}</tbody></table>
-      <div class="total">Original Total: ${money(order.total)}<br>${returnedTotal ? `Returned: -${money(returnedTotal)}<br>` : ""}Net Total: ${money(netTotal)}<br><small>Paid: ${money(order.paidAmount)} | Due: ${money(order.dueAmount)}</small></div>
-      <p style="margin-top:40px">Thank you for choosing CocoBiz ❤️</p><button onclick="window.print()">Print / Save PDF</button>
-      </main></body></html>`;
+    const paymentDetails = history.length
+      ? history.map(p => `
+          <div class="payment-row">
+            <span>${escapeHtml(p.date || "")} ${escapeHtml(p.time || "")}</span>
+            <b>₹${Number(p.amount || 0).toFixed(2)}</b>
+            <small>${escapeHtml(p.method || "Payment")}</small>
+          </div>
+        `).join("")
+      : `<span class="muted">No payment received yet.</span>`;
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CocoBiz Bill - ${escapeHtml(order.id)}</title>
+<style>
+  body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0;padding:20px;color:#333}
+  .bill-container{max-width:650px;margin:0 auto;background:#fff;padding:30px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.08)}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #eaeaea;padding-bottom:18px;margin-bottom:20px;gap:20px}
+  .brand-title{font-size:26px;font-weight:bold;color:#2c3e50;margin:0 0 6px}
+  .company-info{font-size:13px;color:#666;line-height:1.4}
+  .order-meta{text-align:right;font-size:13px;line-height:1.5}
+  .status-badge{display:inline-block;background:#e8f5e9;color:#2e7d32;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:bold;text-transform:capitalize;margin-top:4px}
+  .customer-section{background:#f9fafb;padding:14px 18px;border-radius:6px;margin-bottom:25px;font-size:14px;line-height:1.6}
+  .section-title{font-size:16px;font-weight:bold;margin-bottom:10px;color:#333;border-bottom:1px solid #e5e7eb;padding-bottom:5px}
+  table{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:14px}
+  th{background:#f3f4f6;color:#374151;text-align:left;padding:10px 12px;border-bottom:2px solid #e5e7eb}
+  td{padding:10px 12px;border-bottom:1px solid #f0f0f0}
+  .text-center{text-align:center}.text-right{text-align:right}
+  .total-row td{font-weight:bold;border-top:2px solid #d1d5db;border-bottom:none;font-size:15px}
+  .returned-row{color:#a33}.return-label{font-size:12px;font-weight:bold}
+  .payment-signature-grid{display:flex;justify-content:space-between;gap:25px;margin-top:25px;padding-top:15px}
+  .payment-details{font-size:13px;line-height:1.6;min-width:55%}
+  .payment-row{display:grid;grid-template-columns:1fr auto;gap:3px 12px;padding:6px 0;border-bottom:1px solid #eee}
+  .payment-row small{grid-column:1/-1;color:#777}
+  .signature-block{text-align:center;margin-top:30px}
+  .signature-line{border-top:1px dashed #9ca3af;width:180px;margin-bottom:6px}
+  .signature-text{font-size:12px;color:#6b7280}
+  .print-actions{text-align:center;margin-top:24px}.print-actions button{border:0;border-radius:7px;padding:10px 18px;cursor:pointer;font-weight:bold}
+  .muted{color:#6b7280}
+  @media(max-width:600px){body{padding:8px}.bill-container{padding:18px}.header{flex-direction:column}.order-meta{text-align:left}.payment-signature-grid{flex-direction:column}.signature-block{align-self:flex-end}}
+  @media print{body{background:#fff;padding:0}.bill-container{box-shadow:none;max-width:none}.print-actions{display:none}}
+</style>
+</head>
+<body>
+<div class="bill-container">
+  <div class="header">
+    <div>
+      <h1 class="brand-title">CocoBiz</h1>
+      <div class="company-info">
+        <strong>CocoBiz Chocolate</strong><br>
+        Phone: 7463928290<br>
+        Email: kunalkrverma5555@gmail.com
+      </div>
+    </div>
+    <div class="order-meta">
+      <div><strong>Order ID:</strong> ${escapeHtml(order.id)}</div>
+      <div><strong>Date &amp; Time:</strong> ${escapeHtml(orderDate)}</div>
+      <div><strong>Status:</strong> <span class="status-badge">${escapeHtml(status)}</span></div>
+    </div>
+  </div>
+
+  <div class="customer-section">
+    <strong>Customer Details:</strong><br>
+    <strong>Customer:</strong> ${escapeHtml(customer.name || "Customer")}<br>
+    <strong>Mobile:</strong> ${escapeHtml(customer.number || "")}<br>
+    <strong>Address:</strong> ${escapeHtml(customer.address || customer.type || "")}
+  </div>
+
+  <div class="section-title">Order Details</div>
+  <table>
+    <thead><tr><th>Product</th><th class="text-center">Quantity</th><th class="text-right">Amount (₹)</th></tr></thead>
+    <tbody>
+      ${rows}
+      ${returnRows}
+      <tr class="total-row"><td colspan="2" class="text-right">Original Total:</td><td class="text-right">₹${originalTotal.toFixed(2)}</td></tr>
+      ${returnedTotal ? `<tr><td colspan="2" class="text-right">Returned:</td><td class="text-right">-₹${returnedTotal.toFixed(2)}</td></tr>` : ""}
+      <tr class="total-row"><td colspan="2" class="text-right">Net Total:</td><td class="text-right">₹${netTotal.toFixed(2)}</td></tr>
+    </tbody>
+  </table>
+
+  <div class="payment-signature-grid">
+    <div class="payment-details">
+      <strong>Payment Details</strong><br>
+      ${paymentDetails}<br>
+      Total Received: ₹${paid.toFixed(2)}<br>
+      <strong>Total Due: ₹${due.toFixed(2)}</strong>
+    </div>
+    <div class="signature-block">
+      <div class="signature-line"></div>
+      <div class="signature-text">Authorised Signature</div>
+    </div>
+  </div>
+
+  <div class="print-actions"><button onclick="window.print()">Print / Save PDF</button></div>
+</div>
+</body>
+</html>`;
 
     const win = window.open("", "_blank");
     if (win) {
+      win.document.open();
       win.document.write(html);
       win.document.close();
     }
   }
 
   function renderSalesDashboard() {
-    const total = orders.reduce(
-      (sum, order) => sum + Number(order.total || 0), 0
-    );
-
-    const paid = orders.reduce(
-      (sum, order) => sum + Number(order.paidAmount || 0), 0
-    );
-
-    const due = orders.reduce(
-      (sum, order) => sum + Number(order.dueAmount || 0), 0
-    );
+    const total = orders.reduce((sum, order) => sum + Number(order.netTotal ?? order.total ?? 0), 0);
+    const paid = orders.reduce((sum, order) => sum + Number(order.paidAmount || 0), 0);
+    const due = orders.reduce((sum, order) => sum + Math.max(0, Number(order.dueAmount ?? (Number(order.netTotal ?? order.total ?? 0) - Number(order.paidAmount || 0)))), 0);
 
     if ($("todaySale")) $("todaySale").textContent = money(total);
     if ($("todayPaid")) $("todayPaid").textContent = money(paid);
