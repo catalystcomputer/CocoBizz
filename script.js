@@ -1293,27 +1293,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CocoBiz Bill - ${escapeHtml(order.id)}</title>
 <style>
-  body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0;padding:20px;color:#333}
-  .bill-container{max-width:650px;margin:0 auto;background:#fff;padding:30px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.08)}
-  .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #eaeaea;padding-bottom:18px;margin-bottom:20px;gap:20px}
-  .brand-title{font-size:26px;font-weight:bold;color:#2c3e50;margin:0 0 6px}
-  .company-info{font-size:13px;color:#666;line-height:1.4}
-  .order-meta{text-align:right;font-size:13px;line-height:1.5}
-  .status-badge{display:inline-block;background:#e8f5e9;color:#2e7d32;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:bold;text-transform:capitalize;margin-top:4px}
-  .customer-section{background:#f9fafb;padding:14px 18px;border-radius:6px;margin-bottom:25px;font-size:14px;line-height:1.6}
-  .section-title{font-size:16px;font-weight:bold;margin-bottom:10px;color:#333;border-bottom:1px solid #e5e7eb;padding-bottom:5px}
-  table{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:14px}
-  th{background:#f3f4f6;color:#374151;text-align:left;padding:10px 12px;border-bottom:2px solid #e5e7eb}
-  td{padding:10px 12px;border-bottom:1px solid #f0f0f0}
+  body{font-family:Arial,sans-serif;background:#f6eee7;margin:0;padding:20px;color:#3f2a20}
+  .bill-container{max-width:650px;margin:0 auto;background:#fff;padding:30px;border-radius:12px;box-shadow:0 8px 24px rgba(75,45,28,.12);border-top:5px solid #8b4a2f}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #ead9cb;padding-bottom:18px;margin-bottom:20px;gap:20px}
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+  .brand-logo{width:42px;height:42px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#6f3b24,#d8954d);color:#fff5df;font-size:22px;font-weight:bold;box-shadow:0 4px 10px rgba(111,59,36,.22)}
+  .brand-title{font-size:28px;font-weight:bold;color:#5a301f;margin:0}
+  .brand-title em{color:#d58a3b;font-style:normal}
+  .company-info{font-size:13px;color:#715f55;line-height:1.5}
+  .order-meta{text-align:right;font-size:13px;line-height:1.5;color:#5e514b}
+  .status-badge{display:inline-block;background:#fff0dc;color:#8b4a2f;padding:4px 11px;border-radius:12px;font-size:12px;font-weight:bold;text-transform:capitalize;margin-top:4px}
+  .customer-section{background:linear-gradient(135deg,#fff8f1,#f9eee5);padding:14px 18px;border-radius:8px;margin-bottom:25px;font-size:14px;line-height:1.6;border:1px solid #f0dfd1}
+  .section-title{font-size:16px;font-weight:bold;margin-bottom:10px;color:#5a301f;border-bottom:2px solid #d8954d;padding-bottom:6px}
+  table{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:14px;overflow:hidden;border-radius:7px}
+  th{background:#7b432b;color:#fff;text-align:left;padding:10px 12px;border-bottom:2px solid #63351f}
+  td{padding:10px 12px;border-bottom:1px solid #f0e3da}
   .text-center{text-align:center}.text-right{text-align:right}
-  .total-row td{font-weight:bold;border-top:2px solid #d1d5db;border-bottom:none;font-size:15px}
-  .returned-row{color:#a33}.return-label{font-size:12px;font-weight:bold}
-  .payment-signature-grid{display:flex;justify-content:space-between;gap:25px;margin-top:25px;padding-top:15px}
+  .total-row td{font-weight:bold;border-top:2px solid #d8954d;background:#fff8f1;border-bottom:none;font-size:15px}
+  .returned-row{color:#a0442c;background:#fff3ef}.return-label{font-size:12px;font-weight:bold}
+  .payment-signature-grid{display:flex;justify-content:space-between;gap:25px;margin-top:25px;padding-top:15px;border-top:1px solid #ead9cb}
   .payment-details{font-size:13px;line-height:1.6;min-width:55%}
-  .payment-row{display:grid;grid-template-columns:1fr auto;gap:3px 12px;padding:6px 0;border-bottom:1px solid #eee}
-  .payment-row small{grid-column:1/-1;color:#777}
+  .payment-row{display:grid;grid-template-columns:1fr auto;gap:3px 12px;padding:7px 0;border-bottom:1px solid #f0e3da}
+  .payment-row b{color:#7b432b}
+  .payment-row small{grid-column:1/-1;color:#8a776c}
   .signature-block{text-align:center;margin-top:30px}
-  .signature-line{border-top:1px dashed #9ca3af;width:180px;margin-bottom:6px}
+  .signature-line{border-top:1px dashed #b08a73;width:180px;margin-bottom:6px}
   .signature-text{font-size:12px;color:#6b7280}
   .print-actions{text-align:center;margin-top:24px}.print-actions button{border:0;border-radius:7px;padding:10px 18px;cursor:pointer;font-weight:bold}
   .muted{color:#6b7280}
@@ -1325,7 +1329,10 @@
 <div class="bill-container">
   <div class="header">
     <div>
-      <h1 class="brand-title">CocoBiz</h1>
+      <div class="brand">
+        <div class="brand-logo">✦</div>
+        <h1 class="brand-title">Coco<em>Biz</em></h1>
+      </div>
       <div class="company-info">
         <strong>CocoBiz Chocolate</strong><br>
         Phone: 7463928290<br>
