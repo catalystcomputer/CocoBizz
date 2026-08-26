@@ -24,6 +24,8 @@
   let currentProfile = null;
   let salesmanRates = {};
   let salesmen = [];
+  let publicSalesmanId = new URLSearchParams(window.location.search).get("salesman") || "";
+  let publicSalesmanProfile = null;
 
   const money = value =>
     `₹${Number(value || 0).toLocaleString("en-IN", {
@@ -38,6 +40,22 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
+
+  function publicRate(product) {
+    if (publicSalesmanProfile?.rates && Object.prototype.hasOwnProperty.call(publicSalesmanProfile.rates, product.id)) return Number(publicSalesmanProfile.rates[product.id]);
+    if (currentRole === "salesman" && Object.prototype.hasOwnProperty.call(salesmanRates || {}, product.id)) return Number(salesmanRates[product.id]);
+    return Number(product.salePrice || 0);
+  }
+
+  async function loadPublicSalesmanProfile() {
+    publicSalesmanProfile = null;
+    if (!publicSalesmanId || !db) return;
+    try {
+      const snap = await db.collection("publicSalesmen").doc(publicSalesmanId).get();
+      if (snap.exists && snap.data().role === "salesman" && snap.data().active !== false) publicSalesmanProfile = { id: snap.id, ...snap.data() };
+      else publicSalesmanId = "";
+    } catch (e) { console.warn("Public salesman profile load failed", e); }
+  }
 
   const errorText = error => {
     if (error?.code === "permission-denied") {
@@ -164,7 +182,7 @@
           <p>${escapeHtml(product.description)}</p>
 
           <div class="price">
-            <strong>${money(product.salePrice)}</strong>
+            <strong>${money(publicRate(product))}</strong>
             ${
               Number(product.actualPrice) > Number(product.salePrice)
                 ? `<span class="old-price">${money(product.actualPrice)}</span>`
@@ -205,7 +223,7 @@
         const product = products.find(item => item.id === id);
         if (!product) return null;
 
-        const price = Number(product.salePrice || 0);
+        const price = publicRate(product);
         const safeQuantity = Number(quantity);
 
         return {
@@ -345,7 +363,7 @@
       const deleteButton = event.target.closest("[data-delete-order]");
       if (returnButton) processReturn(returnButton.dataset.returnOrder);
       if (billButton) printOrderBill(billButton.dataset.billOrder);
-      if (acceptButton) updateOrderStatus(acceptButton.dataset.acceptOrder, "accepted");
+      if (acceptButton) updateOrderStatus(acceptButton.dataset.acceptOrder);
       if (paymentButton) receivePayment(paymentButton.dataset.paymentOrder);
       if (deleteButton) deleteOrder(deleteButton.dataset.deleteOrder);
     });
@@ -372,6 +390,9 @@
         if (currentProfile.role === "salesman") {
           currentRole = "salesman";
           salesmanRates = currentProfile.rates || {};
+          publicSalesmanId = user.uid;
+          publicSalesmanProfile = currentProfile;
+          renderProducts();
         }
       }
     } catch (e) {
@@ -412,6 +433,9 @@
       await db.collection("users").doc(cred.user.uid).set({
         name, number, email, role: "salesman", rates: {}, createdAt: Date.now(), active: true
       });
+      await db.collection("publicSalesmen").doc(cred.user.uid).set({
+        name, number, rates: {}, active: true, updatedAt: Date.now()
+      });
       await secondaryAuth.signOut();
       $("salesmanCredentials").innerHTML = `<strong>Salesman created successfully</strong><br>Login ID: <b>${escapeHtml(email)}</b><br>Password: <b>${escapeHtml(password)}</b><br><small>Is password ko salesman ko de dein. Baad me Forgot / Reset Password se change kiya ja sakta hai.</small>`;
       $("salesmanCredentials").classList.remove("hidden");
@@ -436,12 +460,26 @@
   function renderSalesmen() {
     const box = $("salesmenList");
     if (!box) return;
-    box.innerHTML = salesmen.length ? salesmen.map(s => `
-      <div class="admin-product salesman-card">
-        <div class="salesman-avatar">${escapeHtml((s.name || "S").charAt(0).toUpperCase())}</div>
-        <div><strong>${escapeHtml(s.name || "Salesman")}</strong><small><br>${escapeHtml(s.number || "")}<br>${escapeHtml(s.email || "")}</small></div>
-        <div class="admin-product-actions"><button class="secondary-button" data-reset-salesman="${escapeHtml(s.email || "")}">Reset Password</button></div>
-      </div>`).join("") : `<p class="modal-subtitle">अभी कोई salesman नहीं है।</p>`;
+    box.innerHTML = salesmen.length ? salesmen.map(s => {
+      const so = orders.filter(o => o.salesmanId === s.id);
+      const pending = so.filter(o => ["salesman_pending","pending_admin"].includes(o.status));
+      const accepted = so.filter(o => ["accepted","received"].includes(o.status));
+      const paid = so.reduce((x,o)=>x+Number(o.paidAmount||0),0);
+      const due = so.reduce((x,o)=>x+Math.max(0,Number(o.dueAmount||0)),0);
+      const total = so.reduce((x,o)=>x+Number(o.netTotal ?? o.total ?? 0),0);
+      const share = `${window.location.origin}${window.location.pathname}?salesman=${encodeURIComponent(s.id)}`;
+      return `<details class="salesman-folder admin-product">
+        <summary><div class="salesman-avatar">${escapeHtml((s.name||"S").charAt(0).toUpperCase())}</div><div><strong>${escapeHtml(s.name||"Salesman")}</strong><small><br>${escapeHtml(s.number||"")} · ${escapeHtml(s.email||"")}</small></div><span class="folder-count">${so.length} orders</span></summary>
+        <div class="salesman-folder-body">
+          <div class="sale-summary salesman-summary"><div><small>Total Orders</small><strong>${so.length}</strong></div><div><small>Accepted</small><strong>${accepted.length}</strong></div><div><small>Pending</small><strong>${pending.length}</strong></div><div><small>Due</small><strong>${money(due)}</strong></div></div>
+          <p><b>Total:</b> ${money(total)} · <b>Received:</b> ${money(paid)} · <b>Due:</b> ${money(due)}</p>
+          <div class="share-link-box"><input readonly value="${escapeHtml(share)}"><button class="secondary-button" data-copy-salesman-link="${escapeHtml(share)}">Copy Link</button></div>
+          <div class="salesman-order-list">${so.length ? so.map(o=>`<div class="salesman-order-row"><div><b>#${escapeHtml(o.id)}</b> · ${escapeHtml(o.customer?.name||"Customer")}<br><small>${escapeHtml(o.date||"")}</small></div><div><b>${money(o.netTotal ?? o.total)}</b><br><span class="status-badge">${escapeHtml(o.status||"pending")}</span></div></div>`).join("") : '<p class="modal-subtitle">No orders yet.</p>'}</div>
+          <div class="admin-product-actions"><button class="secondary-button" data-reset-salesman="${escapeHtml(s.email||"")}">Reset Password</button></div>
+        </div></details>`;
+    }).join("") : `<p class="modal-subtitle">अभी कोई salesman नहीं है।</p>`;
+    box.querySelectorAll("[data-reset-salesman]").forEach(b=>b.onclick=()=>resetSalesmanPassword(b.dataset.resetSalesman));
+    box.querySelectorAll("[data-copy-salesman-link]").forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(b.dataset.copySalesmanLink);alert("Salesman link copied.")}catch{prompt("Link copy करें:",b.dataset.copySalesmanLink)}});
   }
 
   async function resetSalesmanPassword(email) {
@@ -548,6 +586,7 @@
     salesmanRates[productId] = rate;
     try {
       await db.collection("users").doc(auth.currentUser.uid).set({ rates: salesmanRates, updatedAt: Date.now() }, { merge: true });
+      await db.collection("publicSalesmen").doc(auth.currentUser.uid).set({ rates: salesmanRates, updatedAt: Date.now(), name: currentProfile?.name || "Salesman", number: currentProfile?.number || "", active: currentProfile?.active !== false }, { merge: true });
       fillSaleProducts();
       alert("Personal salesman rate save हो गया। Admin product rate नहीं बदला गया।");
     } catch (error) { alert(`Rate save नहीं हुआ: ${errorText(error)}`); }
@@ -971,8 +1010,12 @@
       paidAmount: 0,
       dueAmount: total,
       paymentMethod: "WhatsApp",
-      paymentHistory: []
+      paymentHistory: [],
+      salesmanId: publicSalesmanId || null,
+      salesmanName: publicSalesmanProfile?.name || null,
+      salesmanNumber: publicSalesmanProfile?.number || null
     };
+    data.status = publicSalesmanId ? "salesman_pending" : "pending";
 
     const saveCloud = async () => {
       await db.collection("orders").add(data);
@@ -998,7 +1041,9 @@
         `Type: ${data.customer.type}`
       ].join("\n");
 
-      const waUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+      const targetNumber = data.salesmanNumber ? String(data.salesmanNumber).replace(/\D/g, "") : WHATSAPP_NUMBER;
+      const normalizedTarget = targetNumber.length === 10 ? "91" + targetNumber : targetNumber;
+      const waUrl = `https://wa.me/${normalizedTarget}?text=${encodeURIComponent(message)}`;
       try { window.open(waUrl, "_blank"); } catch {}
 
       showOrderSuccess(data.customer.number, clientId);
@@ -1115,34 +1160,33 @@
             </div>
 
             <div class="admin-order-actions">
-              ${order.status !== "accepted" && order.status !== "received" ? `<button class="primary-button" data-accept-order="${escapeHtml(order.id)}">✓ Accept Order</button>` : ""}
-              ${due > 0 ? `<button class="secondary-button" data-payment-order="${escapeHtml(order.id)}">💰 Received Payment</button>` : ""}
+              ${currentRole === "admin" && ["pending","pending_admin"].includes(order.status) ? `<button class="primary-button" data-accept-order="${escapeHtml(order.id)}">✓ Accept Order</button>` : ""}
+              ${currentRole === "salesman" && order.salesmanId === auth.currentUser?.uid && order.status === "salesman_pending" ? `<button class="primary-button" data-accept-order="${escapeHtml(order.id)}">✓ Accept & Send to Admin</button>` : ""}
+              ${due > 0 && ["accepted","received"].includes(order.status) ? `<button class="secondary-button" data-payment-order="${escapeHtml(order.id)}">💰 Received Payment</button>` : ""}
               <button class="secondary-button" data-return-order="${escapeHtml(order.id)}">↩ Return Item</button>
               <button class="secondary-button" data-bill-order="${escapeHtml(order.id)}">🧾 Bill</button>
               <a class="secondary-button" href="tel:${escapeHtml(order.customer?.number || "")}">☎ Contact</a>
-              <button class="delete-button" data-delete-order="${escapeHtml(order.id)}">🗑 Delete Order</button>
+              ${(currentRole === "admin" || (currentRole === "salesman" && order.salesmanId === auth.currentUser?.uid && ["salesman_pending","pending_admin"].includes(order.status))) ? `<button class="delete-button" data-delete-order="${escapeHtml(order.id)}">🗑 Delete Order</button>` : ""}
             </div>
           </div>`;
         }).join("")
       : "<p class='modal-subtitle'>No orders yet.</p>";
   }
 
-  async function updateOrderStatus(orderId, status) {
+  async function updateOrderStatus(orderId) {
     const order = orders.find(item => item.id === orderId);
     if (!order) return;
+    let status = "accepted";
+    let message = "Order accepted successfully.";
+    if (currentRole === "salesman" && order.salesmanId === auth.currentUser?.uid && order.status === "salesman_pending") {
+      status = "pending_admin";
+      message = "Salesman ने order accept कर दिया. अब Admin approval pending है.";
+    } else if (currentRole !== "admin") return;
     try {
-      await db.collection("orders").doc(orderId).update({
-        status,
-        acceptedAt: status === "accepted" ? Date.now() : (order.acceptedAt || null),
-        updatedAt: Date.now()
-      });
-      await loadOrders();
-      renderOrders();
-      renderSalesDashboard();
-      alert("Order accepted successfully.");
-    } catch (error) {
-      alert(`Order status update नहीं हुआ: ${errorText(error)}`);
-    }
+      await db.collection("orders").doc(orderId).update({ status, salesmanAcceptedAt: status === "pending_admin" ? Date.now() : (order.salesmanAcceptedAt || null), acceptedAt: status === "accepted" ? Date.now() : (order.acceptedAt || null), updatedAt: Date.now() });
+      await loadOrders(); renderOrders(); renderSalesDashboard(); if(currentRole === "admin") renderSalesmen();
+      alert(message);
+    } catch(error) { alert(`Order status update नहीं हुआ: ${errorText(error)}`); }
   }
 
   async function receivePayment(orderId) {
@@ -1536,6 +1580,7 @@
   }
 
   async function loadInitialData() {
+    await loadPublicSalesmanProfile();
     await Promise.all([loadProducts(), loadOrders()]);
     renderProducts();
     updateCart();

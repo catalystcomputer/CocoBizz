@@ -9,18 +9,38 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow create: if true;
-      allow read, update, delete: if request.auth != null;
+      allow read: if request.auth != null;
+      allow update, delete: if request.auth != null && (
+        // Admins are authenticated users without a salesman profile.
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman' ||
+        resource.data.salesmanId == request.auth.uid
+      );
     }
 
-    // Salesman profiles and their personal product rates.
-    // The client creates only role="salesman" profiles; no client can create an admin role.
     match /users/{userId} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
+      );
       allow create: if request.auth != null && request.resource.data.role == 'salesman';
       allow update: if request.auth != null && (
-        request.auth.uid == userId || request.resource.data.role == resource.data.role
+        request.auth.uid == userId ||
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
       );
-      allow delete: if request.auth != null && request.resource.data.role == 'salesman';
+      allow delete: if request.auth != null && (
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
+      );
+    }
+
+    // Only non-sensitive fields needed by a shared salesman catalogue are public.
+    match /publicSalesmen/{salesmanId} {
+      allow read: if true;
+      allow create, update: if request.auth != null && request.auth.uid == salesmanId;
+      allow delete: if request.auth != null && request.auth.uid == salesmanId;
     }
   }
 }

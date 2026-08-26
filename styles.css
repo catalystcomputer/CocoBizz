@@ -492,3 +492,16 @@ select {
 .salesman-rate-editor input{width:130px}
 .salesman-tag{display:inline-block;padding:4px 8px;border-radius:999px;background:#fff1dc;color:#8b4a2f;font-size:12px;font-weight:700}
 @media(max-width:600px){.site-footer{align-items:flex-start}.contact-details{display:grid;width:100%}.contact-details a{width:100%}.salesman-rate-editor{width:100%;margin-left:0}.salesman-rate-editor input{flex:1}.salesman-rate-card{align-items:flex-start}}
+
+.salesman-folder { padding: 0; overflow: hidden; }
+.salesman-folder summary { list-style: none; display:flex; align-items:center; gap:12px; cursor:pointer; padding:16px; }
+.salesman-folder summary::-webkit-details-marker { display:none; }
+.salesman-folder summary:after { content:'▾'; margin-left:auto; transition:transform .2s; }
+.salesman-folder[open] summary:after { transform:rotate(180deg); }
+.salesman-folder-body { padding:0 16px 16px; border-top:1px solid rgba(0,0,0,.08); }
+.salesman-summary { margin:14px 0; }
+.folder-count { margin-left:auto; font-size:12px; opacity:.7; }
+.share-link-box { display:flex; gap:8px; margin:12px 0; }
+.share-link-box input { flex:1; min-width:0; }
+.salesman-order-list { display:grid; gap:8px; }
+.salesman-order-row { display:flex; justify-content:space-between; gap:12px; padding:10px 12px; border:1px solid rgba(0,0,0,.08); border-radius:10px; background:#fffaf6; }
