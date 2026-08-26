@@ -60,6 +60,8 @@
         <p class="error-message" id="loginError"></p>
         <button class="primary-button" type="submit">Login</button>
       </form>
+      <button class="secondary-button login-reset-button" id="forgotPasswordButton" type="button">Forgot / Reset Password</button>
+      <p class="modal-subtitle login-reset-note">Password reset link email par bheja jayega.</p>
     </div>
   </div>
 
@@ -80,6 +82,7 @@
         <button class="admin-tab" id="saleTab">Self Sale</button>
         <button class="admin-tab" id="productsTab">Products</button>
         <button class="admin-tab" id="ordersTab">Orders <span id="orderCount">0</span></button>
+        <button class="admin-tab admin-only-tab" id="salesmenTab">Salesmen</button>
       </div>
 
       <div id="dashboardPanel">
@@ -203,6 +206,18 @@
         </form>
 
         <div class="admin-products" id="adminProducts"></div>
+      </div>
+
+      <div id="salesmenPanel" class="hidden">
+        <p class="modal-subtitle">अपने salesmen बनाएं, उनकी personal rate और बिक्री देखें।</p>
+        <form id="salesmanForm" class="product-form">
+          <div class="form-group"><label for="salesmanName">Salesman name</label><input id="salesmanName" required></div>
+          <div class="form-group"><label for="salesmanNumber">Mobile number</label><input id="salesmanNumber" type="tel" pattern="[0-9]{10}" maxlength="10" required></div>
+          <div class="form-group full-width"><label for="salesmanEmail">Email / Login ID</label><input id="salesmanEmail" type="email" required></div>
+          <div class="form-actions full-width"><button class="primary-button" type="submit">Create Salesman</button></div>
+        </form>
+        <div id="salesmanCredentials" class="credentials-box hidden"></div>
+        <div class="admin-products" id="salesmenList"></div>
       </div>
 
       <div id="ordersPanel" class="hidden">

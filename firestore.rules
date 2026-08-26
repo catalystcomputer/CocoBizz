@@ -2,18 +2,25 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Products are public on the customer website.
     match /products/{productId} {
       allow read: if true;
       allow write: if request.auth != null;
     }
 
-    // Customers can create an order, but cannot read other customers' orders.
-    // Admin must be signed in to view/update orders from the Admin Panel.
     match /orders/{orderId} {
       allow create: if true;
       allow read, update, delete: if request.auth != null;
+    }
+
+    // Salesman profiles and their personal product rates.
+    // The client creates only role="salesman" profiles; no client can create an admin role.
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.role == 'salesman';
+      allow update: if request.auth != null && (
+        request.auth.uid == userId || request.resource.data.role == resource.data.role
+      );
+      allow delete: if request.auth != null && request.resource.data.role == 'salesman';
     }
   }
 }

@@ -20,6 +20,10 @@
   let cart = {};
   let searchTerm = "";
   let selfSaleItems = [];
+  let currentRole = "admin";
+  let currentProfile = null;
+  let salesmanRates = {};
+  let salesmen = [];
 
   const money = value =>
     `₹${Number(value || 0).toLocaleString("en-IN", {
@@ -121,11 +125,13 @@
     try {
       const snapshot = await db.collection("orders").get();
 
-      orders = snapshot.docs
+      const allOrders = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .sort((a, b) =>
-          Number(b.createdAt || 0) - Number(a.createdAt || 0)
-        );
+        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+
+      orders = currentRole === "salesman"
+        ? allOrders.filter(order => order.salesmanId === auth.currentUser?.uid)
+        : allOrders;
 
       if ($("orderCount")) {
         $("orderCount").textContent = orders.length;
@@ -301,6 +307,13 @@
 
     $("loginForm")?.addEventListener("submit", loginAdmin);
     $("logoutButton")?.addEventListener("click", logoutAdmin);
+    $("forgotPasswordButton")?.addEventListener("click", sendPasswordReset);
+    $("salesmenTab")?.addEventListener("click", () => showAdminPanel("salesmen"));
+    $("salesmanForm")?.addEventListener("submit", createSalesman);
+    $("salesmenList")?.addEventListener("click", event => {
+      const reset = event.target.closest("[data-reset-salesman]");
+      if (reset) resetSalesmanPassword(reset.dataset.resetSalesman);
+    });
     $("productForm")?.addEventListener("submit", saveProduct);
     $("cancelEdit")?.addEventListener("click", resetProductForm);
     $("orderForm")?.addEventListener("submit", submitOrder);
@@ -348,6 +361,95 @@
     $("loginModal")?.classList.remove("hidden");
   }
 
+  async function loadUserProfile(user) {
+    currentRole = "admin";
+    currentProfile = null;
+    salesmanRates = {};
+    try {
+      const snap = await db.collection("users").doc(user.uid).get();
+      if (snap.exists) {
+        currentProfile = { id: snap.id, ...snap.data() };
+        if (currentProfile.role === "salesman") {
+          currentRole = "salesman";
+          salesmanRates = currentProfile.rates || {};
+        }
+      }
+    } catch (e) {
+      console.warn("Profile load failed; treating existing Firebase user as admin.", e);
+    }
+  }
+
+  function generatePassword() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#";
+    return Array.from({length: 10}, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  }
+
+  async function sendPasswordReset() {
+    const email = $("adminEmail")?.value.trim();
+    if (!email) { alert("पहले email / login ID डालें।"); return; }
+    try {
+      await auth.sendPasswordResetEmail(email);
+      alert("Password reset link email पर भेज दिया गया है।");
+    } catch (error) {
+      alert(`Reset link नहीं भेजा गया: ${errorText(error)}`);
+    }
+  }
+
+  async function createSalesman(event) {
+    event.preventDefault();
+    if (currentRole !== "admin") return;
+    const name = $("salesmanName").value.trim();
+    const number = $("salesmanNumber").value.trim();
+    const email = $("salesmanEmail").value.trim().toLowerCase();
+    if (!name || !/^[0-9]{10}$/.test(number) || !email) { alert("Name, valid 10-digit mobile और email भरें।"); return; }
+
+    const password = generatePassword();
+    let secondaryApp;
+    try {
+      secondaryApp = firebase.apps.find(app => app.name === "CocoBizSalesmanCreator") || firebase.initializeApp(firebaseConfig, "CocoBizSalesmanCreator");
+      const secondaryAuth = secondaryApp.auth();
+      const cred = await secondaryAuth.createUserWithEmailAndPassword(email, password);
+      await db.collection("users").doc(cred.user.uid).set({
+        name, number, email, role: "salesman", rates: {}, createdAt: Date.now(), active: true
+      });
+      await secondaryAuth.signOut();
+      $("salesmanCredentials").innerHTML = `<strong>Salesman created successfully</strong><br>Login ID: <b>${escapeHtml(email)}</b><br>Password: <b>${escapeHtml(password)}</b><br><small>Is password ko salesman ko de dein. Baad me Forgot / Reset Password se change kiya ja sakta hai.</small>`;
+      $("salesmanCredentials").classList.remove("hidden");
+      $("salesmanForm").reset();
+      await loadSalesmen();
+    } catch (error) {
+      alert(`Salesman create नहीं हुआ: ${errorText(error)}`);
+    }
+  }
+
+  async function loadSalesmen() {
+    if (!db || currentRole !== "admin") return;
+    try {
+      const snap = await db.collection("users").where("role", "==", "salesman").get();
+      salesmen = snap.docs.map(doc => ({id: doc.id, ...doc.data()})).sort((a,b) => String(a.name||"").localeCompare(String(b.name||"")));
+      renderSalesmen();
+    } catch (error) {
+      console.error("Salesmen load error", error);
+    }
+  }
+
+  function renderSalesmen() {
+    const box = $("salesmenList");
+    if (!box) return;
+    box.innerHTML = salesmen.length ? salesmen.map(s => `
+      <div class="admin-product salesman-card">
+        <div class="salesman-avatar">${escapeHtml((s.name || "S").charAt(0).toUpperCase())}</div>
+        <div><strong>${escapeHtml(s.name || "Salesman")}</strong><small><br>${escapeHtml(s.number || "")}<br>${escapeHtml(s.email || "")}</small></div>
+        <div class="admin-product-actions"><button class="secondary-button" data-reset-salesman="${escapeHtml(s.email || "")}">Reset Password</button></div>
+      </div>`).join("") : `<p class="modal-subtitle">अभी कोई salesman नहीं है।</p>`;
+  }
+
+  async function resetSalesmanPassword(email) {
+    if (!email) return;
+    try { await auth.sendPasswordResetEmail(email); alert(`Reset link ${email} पर भेज दिया गया है।`); }
+    catch (error) { alert(`Reset link नहीं भेजा गया: ${errorText(error)}`); }
+  }
+
   async function loginAdmin(event) {
     event.preventDefault();
 
@@ -358,12 +460,17 @@
     errorBox.textContent = "Logging in...";
 
     try {
-      await auth.signInWithEmailAndPassword(email, password);
+      const credential = await auth.signInWithEmailAndPassword(email, password);
+      await loadUserProfile(credential.user);
 
       errorBox.textContent = "";
       $("loginForm").reset();
       $("loginModal")?.classList.add("hidden");
       $("adminModal")?.classList.remove("hidden");
+      const heading = document.querySelector(".admin-heading h2");
+      if (heading) heading.textContent = currentRole === "salesman" ? "Salesman Dashboard" : "Admin Panel";
+      document.querySelectorAll(".admin-only-tab").forEach(el => el.classList.toggle("hidden", currentRole !== "admin"));
+      $("productForm")?.classList.toggle("hidden", currentRole === "salesman");
 
       await loadAdminData();
     } catch (error) {
@@ -390,6 +497,9 @@
     renderSalesDashboard();
     fillSaleProducts();
     fillCustomers();
+    if (currentRole === "admin") await loadSalesmen();
+    $("salesmenTab")?.classList.toggle("hidden", currentRole !== "admin");
+    $("productForm")?.classList.toggle("hidden", currentRole === "salesman");
   }
 
   function showAdminPanel(name) {
@@ -397,7 +507,8 @@
       dashboard: "dashboardPanel",
       sale: "salePanel",
       products: "productsPanel",
-      orders: "ordersPanel"
+      orders: "ordersPanel",
+      salesmen: "salesmenPanel"
     };
 
     Object.values(panels).forEach(id => {
@@ -415,10 +526,31 @@
     if (name === "dashboard") renderSalesDashboard();
     if (name === "products") renderAdminProducts();
     if (name === "orders") renderOrders();
-    if (name === "sale") {
+    if (name === "sale") { fillSaleProducts(); fillCustomers(); }
+    if (name === "salesmen" && currentRole === "admin") loadSalesmen();
+    if (name === "products" && currentRole === "salesman") renderSalesmanProducts();
+  }
+
+  function renderSalesmanProducts() {
+    const box = $("adminProducts");
+    if (!box) return;
+    box.innerHTML = products.length ? products.map(product => {
+      const rate = Number(salesmanRates[product.id] ?? product.salePrice ?? 0);
+      return `<div class="admin-product salesman-rate-card"><img src="${product.image || placeholderImage()}" alt="${escapeHtml(product.name)}"><div><strong>${escapeHtml(product.name)}</strong><small><br>Admin rate: ${money(product.salePrice)}</small></div><div class="salesman-rate-editor"><input type="number" min="0" step="0.01" value="${rate}" data-salesman-rate="${escapeHtml(product.id)}"><button class="secondary-button" data-save-salesman-rate="${escapeHtml(product.id)}">Save Rate</button></div></div>`;
+    }).join("") : `<p class="modal-subtitle">No products added yet.</p>`;
+    box.querySelectorAll("[data-save-salesman-rate]").forEach(btn => btn.onclick = () => saveSalesmanRate(btn.dataset.saveSalesmanRate));
+  }
+
+  async function saveSalesmanRate(productId) {
+    const input = document.querySelector(`[data-salesman-rate="${CSS.escape(productId)}"]`);
+    const rate = Number(input?.value);
+    if (!Number.isFinite(rate) || rate < 0) { alert("Valid rate डालें।"); return; }
+    salesmanRates[productId] = rate;
+    try {
+      await db.collection("users").doc(auth.currentUser.uid).set({ rates: salesmanRates, updatedAt: Date.now() }, { merge: true });
       fillSaleProducts();
-      fillCustomers();
-    }
+      alert("Personal salesman rate save हो गया। Admin product rate नहीं बदला गया।");
+    } catch (error) { alert(`Rate save नहीं हुआ: ${errorText(error)}`); }
   }
 
   function renderAdminProducts() {
@@ -626,7 +758,7 @@
       <option value="">Choose product</option>
       ${products.map(product => `
         <option value="${escapeHtml(product.id)}">
-          ${escapeHtml(product.name)} - ${money(product.salePrice)}
+          ${escapeHtml(product.name)} - ${money(currentRole === "salesman" ? (salesmanRates[product.id] ?? product.salePrice) : product.salePrice)}
         </option>
       `).join("")}
     `;
@@ -634,7 +766,7 @@
     select.onchange = () => {
       const product = products.find(item => item.id === select.value);
       if ($("saleRate")) {
-        $("saleRate").value = product?.salePrice ?? "";
+        $("saleRate").value = product ? (currentRole === "salesman" ? (salesmanRates[product.id] ?? product.salePrice) : product.salePrice) : "";
       }
     };
   }
@@ -738,7 +870,7 @@
   async function saveSelfSale(event) {
     event.preventDefault();
     if (!auth?.currentUser) {
-      alert("Admin login required.");
+      alert("Login required.");
       return;
     }
     if (!selfSaleItems.length) {
@@ -777,6 +909,8 @@
       paidAmount: paid,
       dueAmount: Math.max(0, total - paid),
       paymentMethod: $("salePayment")?.value || "Manual",
+      salesmanId: currentRole === "salesman" ? auth.currentUser.uid : null,
+      salesmanName: currentRole === "salesman" ? (currentProfile?.name || auth.currentUser.email) : null,
       paymentHistory: paid > 0 ? [{
         amount: paid,
         date: new Date().toLocaleDateString("en-IN"),
@@ -897,11 +1031,9 @@
     const call = $("successCall");
 
     if (wa) {
-      wa.href = whatsapp
-        ? `https://wa.me/${whatsapp}`
-        : `https://wa.me/${WHATSAPP_NUMBER}`;
+      wa.href = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(`CocoBiz order ${orderId} successfully received. Customer: ${customerNumber || "N/A"}`)}`;
     }
-    if (call) call.href = `tel:${contact || WHATSAPP_NUMBER}`;
+    if (call) call.href = `tel:${WHATSAPP_NUMBER}`;
 
     if ($("successOrderId")) $("successOrderId").textContent = orderId;
     modal.classList.remove("hidden");
@@ -951,6 +1083,7 @@
             </div>
 
             <p>
+              ${order.salesmanName ? `<span class="salesman-tag">👤 ${escapeHtml(order.salesmanName)}</span><br>` : ""}
               <b>${escapeHtml(order.customer?.name || "Customer")}</b><br>
               Mobile: ${escapeHtml(order.customer?.number || "")}<br>
               ${escapeHtml(order.customer?.address || "")}
@@ -1416,13 +1549,16 @@
 
       auth.onAuthStateChanged(async user => {
         if (!user) {
+          currentRole = "admin"; currentProfile = null; salesmanRates = {};
           $("adminModal")?.classList.add("hidden");
           return;
         }
 
-        // Login ke baad hi admin panel open hoga.
+        await loadUserProfile(user);
         if (!$("loginModal")?.classList.contains("hidden")) return;
-
+        const heading = document.querySelector(".admin-heading h2");
+        if (heading) heading.textContent = currentRole === "salesman" ? "Salesman Dashboard" : "Admin Panel";
+        document.querySelectorAll(".admin-only-tab").forEach(el => el.classList.toggle("hidden", currentRole !== "admin"));
         await loadAdminData();
       });
 
