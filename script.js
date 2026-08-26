@@ -425,7 +425,8 @@
     const email = $("salesmanEmail").value.trim().toLowerCase();
     if (!name || !/^[0-9]{10}$/.test(number) || !email) { alert("Name, valid 10-digit mobile और email भरें।"); return; }
 
-    const password = generatePassword();
+    // Default password for newly created salesmen. Admin can change it later from Salesmen.
+    const password = "Pritam@8541";
     let secondaryApp;
     try {
       secondaryApp = firebase.apps.find(app => app.name === "CocoBizSalesmanCreator") || firebase.initializeApp(firebaseConfig, "CocoBizSalesmanCreator");
@@ -1593,9 +1594,13 @@
   }
 
   function renderSalesDashboard() {
-    const total = orders.reduce((sum, order) => sum + Number(order.netTotal ?? order.total ?? 0), 0);
-    const paid = orders.reduce((sum, order) => sum + Number(order.paidAmount || 0), 0);
-    const due = orders.reduce((sum, order) => sum + Math.max(0, Number(order.dueAmount ?? (Number(order.netTotal ?? order.total ?? 0) - Number(order.paidAmount || 0)))), 0);
+    // Admin dashboard totals must include only orders that Admin has accepted.
+    // Salesman-pending and pending-admin orders remain visible in order/salesman tabs,
+    // but must not affect the main dashboard amounts until Admin approval.
+    const dashboardOrders = orders.filter(order => ["accepted", "received"].includes(order.status));
+    const total = dashboardOrders.reduce((sum, order) => sum + Number(order.netTotal ?? order.total ?? 0), 0);
+    const paid = dashboardOrders.reduce((sum, order) => sum + Number(order.paidAmount || 0), 0);
+    const due = dashboardOrders.reduce((sum, order) => sum + Math.max(0, Number(order.dueAmount ?? (Number(order.netTotal ?? order.total ?? 0) - Number(order.paidAmount || 0)))), 0);
 
     if ($("todaySale")) $("todaySale").textContent = money(total);
     if ($("todayPaid")) $("todayPaid").textContent = money(paid);
