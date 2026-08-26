@@ -505,3 +505,7 @@ select {
 .share-link-box input { flex:1; min-width:0; }
 .salesman-order-list { display:grid; gap:8px; }
 .salesman-order-row { display:flex; justify-content:space-between; gap:12px; padding:10px 12px; border:1px solid rgba(0,0,0,.08); border-radius:10px; background:#fffaf6; }
+
+.salesman-folder .admin-product-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+.salesman-folder .admin-product-actions button { flex:1 1 180px; }
+.credentials-box { word-break:break-word; }

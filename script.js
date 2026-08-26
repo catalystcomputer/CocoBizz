@@ -52,7 +52,7 @@
     if (!publicSalesmanId || !db) return;
     try {
       const snap = await db.collection("publicSalesmen").doc(publicSalesmanId).get();
-      if (snap.exists && snap.data().role === "salesman" && snap.data().active !== false) publicSalesmanProfile = { id: snap.id, ...snap.data() };
+      if (snap.exists && (snap.data().role === "salesman" || snap.data().role == null) && snap.data().active !== false) publicSalesmanProfile = { id: snap.id, ...snap.data(), role: "salesman" };
       else publicSalesmanId = "";
     } catch (e) { console.warn("Public salesman profile load failed", e); }
   }
@@ -84,6 +84,7 @@
       await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
       await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js");
       await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js");
+      await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js");
     }
 
     if (!firebase.apps.length) {
@@ -434,7 +435,7 @@
         name, number, email, role: "salesman", rates: {}, createdAt: Date.now(), active: true
       });
       await db.collection("publicSalesmen").doc(cred.user.uid).set({
-        name, number, rates: {}, active: true, updatedAt: Date.now()
+        name, number, email, role: "salesman", rates: {}, active: true, updatedAt: Date.now()
       });
       await secondaryAuth.signOut();
       $("salesmanCredentials").innerHTML = `<strong>Salesman created successfully</strong><br>Login ID: <b>${escapeHtml(email)}</b><br>Password: <b>${escapeHtml(password)}</b><br><small>Is password ko salesman ko de dein. Baad me Forgot / Reset Password se change kiya ja sakta hai.</small>`;
@@ -475,17 +476,40 @@
           <p><b>Total:</b> ${money(total)} · <b>Received:</b> ${money(paid)} · <b>Due:</b> ${money(due)}</p>
           <div class="share-link-box"><input readonly value="${escapeHtml(share)}"><button class="secondary-button" data-copy-salesman-link="${escapeHtml(share)}">Copy Link</button></div>
           <div class="salesman-order-list">${so.length ? so.map(o=>`<div class="salesman-order-row"><div><b>#${escapeHtml(o.id)}</b> · ${escapeHtml(o.customer?.name||"Customer")}<br><small>${escapeHtml(o.date||"")}</small></div><div><b>${money(o.netTotal ?? o.total)}</b><br><span class="status-badge">${escapeHtml(o.status||"pending")}</span></div></div>`).join("") : '<p class="modal-subtitle">No orders yet.</p>'}</div>
-          <div class="admin-product-actions"><button class="secondary-button" data-reset-salesman="${escapeHtml(s.email||"")}">Reset Password</button></div>
+          <div class="admin-product-actions"><button class="secondary-button" data-reset-salesman="${escapeHtml(s.email||"")}">Email Reset Link</button><button class="primary-button" data-change-salesman-password="${escapeHtml(s.id)}" data-salesman-email="${escapeHtml(s.email||"")}">Change Password</button></div>
         </div></details>`;
     }).join("") : `<p class="modal-subtitle">अभी कोई salesman नहीं है।</p>`;
     box.querySelectorAll("[data-reset-salesman]").forEach(b=>b.onclick=()=>resetSalesmanPassword(b.dataset.resetSalesman));
+    box.querySelectorAll("[data-change-salesman-password]").forEach(b=>b.onclick=()=>changeSalesmanPassword(b.dataset.changeSalesmanPassword, b.dataset.salesmanEmail));
     box.querySelectorAll("[data-copy-salesman-link]").forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(b.dataset.copySalesmanLink);alert("Salesman link copied.")}catch{prompt("Link copy करें:",b.dataset.copySalesmanLink)}});
   }
 
   async function resetSalesmanPassword(email) {
     if (!email) return;
-    try { await auth.sendPasswordResetEmail(email); alert(`Reset link ${email} पर भेज दिया गया है।`); }
-    catch (error) { alert(`Reset link नहीं भेजा गया: ${errorText(error)}`); }
+    try {
+      const actionSettings = {
+        url: window.location.origin + window.location.pathname,
+        handleCodeInApp: false
+      };
+      await auth.sendPasswordResetEmail(email, actionSettings);
+      alert(`Reset link ${email} पर भेज दिया गया है। Inbox के साथ Spam/Promotions भी check करें।`);
+    } catch (error) {
+      alert(`Reset link नहीं भेजा गया: ${errorText(error)}\n\nFirebase Authentication > Settings > Authorized domains और Email/Password provider check करें।`);
+    }
+  }
+
+  async function changeSalesmanPassword(uid, email) {
+    const password = prompt(`Salesman (${email}) के लिए नया password डालें (कम से कम 6 characters):`);
+    if (password === null) return;
+    if (password.length < 6) { alert("Password कम से कम 6 characters का होना चाहिए।"); return; }
+    try {
+      if (!firebase.functions) throw new Error("Firebase Functions load नहीं हुआ।");
+      const fn = firebase.functions().httpsCallable("adminChangeSalesmanPassword");
+      await fn({ salesmanUid: uid, newPassword: password });
+      alert("Salesman password successfully change हो गया।");
+    } catch (error) {
+      alert(`Password change नहीं हुआ: ${errorText(error)}\n\nCloud Function deploy होने के बाद यह option काम करेगा।`);
+    }
   }
 
   async function loginAdmin(event) {
@@ -586,7 +610,7 @@
     salesmanRates[productId] = rate;
     try {
       await db.collection("users").doc(auth.currentUser.uid).set({ rates: salesmanRates, updatedAt: Date.now() }, { merge: true });
-      await db.collection("publicSalesmen").doc(auth.currentUser.uid).set({ rates: salesmanRates, updatedAt: Date.now(), name: currentProfile?.name || "Salesman", number: currentProfile?.number || "", active: currentProfile?.active !== false }, { merge: true });
+      await db.collection("publicSalesmen").doc(auth.currentUser.uid).set({ role: "salesman", rates: salesmanRates, updatedAt: Date.now(), name: currentProfile?.name || "Salesman", number: currentProfile?.number || "", active: currentProfile?.active !== false }, { merge: true });
       fillSaleProducts();
       alert("Personal salesman rate save हो गया। Admin product rate नहीं बदला गया।");
     } catch (error) { alert(`Rate save नहीं हुआ: ${errorText(error)}`); }

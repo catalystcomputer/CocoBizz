@@ -19,3 +19,9 @@ Upload these 3 website files to your hosting:
 - styles.css
 
 Keep firestore.rules for Firebase configuration.
+
+Salesman password management:
+- "Email Reset Link" sends Firebase's standard reset email.
+- "Change Password" uses the included Firebase Cloud Function: functions/adminChangeSalesmanPassword.
+- Deploy functions before using direct admin password change: firebase deploy --only functions.
+- Cloud Functions may require a Firebase billing/Blaze plan depending on the project and current Firebase terms.
