@@ -83,6 +83,7 @@
         <button class="admin-tab" id="productsTab">Products</button>
         <button class="admin-tab" id="ordersTab">Orders <span id="orderCount">0</span></button>
         <button class="admin-tab admin-only-tab" id="salesmenTab">Salesmen</button>
+        <button class="admin-tab admin-only-tab" id="offersTab">Offers</button>
       </div>
 
       <div id="dashboardPanel">
@@ -208,6 +209,26 @@
         <div class="admin-products" id="adminProducts"></div>
       </div>
 
+      <div id="offersPanel" class="hidden">
+        <p class="modal-subtitle">Customer ko dikhane ke liye ek active offer poster upload karein.</p>
+        <form id="offerForm" class="product-form">
+          <div class="form-group full-width">
+            <label for="offerTitle">Offer title</label>
+            <input id="offerTitle" type="text" maxlength="100" placeholder="Special Offer">
+          </div>
+          <div class="form-group full-width">
+            <label for="offerImage">Offer poster / image</label>
+            <input id="offerImage" type="file" accept="image/*" required>
+            <small class="modal-subtitle">Best result ke liye JPG/PNG poster use karein.</small>
+          </div>
+          <div class="form-actions full-width">
+            <button class="primary-button" type="submit">Upload / Update Offer</button>
+            <button class="secondary-button" type="button" id="deleteOfferButton">Delete Offer</button>
+          </div>
+        </form>
+        <div id="offerAdminPreview" class="offer-admin-preview"></div>
+      </div>
+
       <div id="salesmenPanel" class="hidden">
         <p class="modal-subtitle">अपने salesmen बनाएं, उनकी personal rate और बिक्री देखें।</p>
         <form id="salesmanForm" class="product-form">
@@ -223,6 +244,15 @@
       <div id="ordersPanel" class="hidden">
         <div class="admin-orders" id="adminOrders"></div>
       </div>
+    </div>
+  </div>
+
+  <div class="modal hidden offer-customer-modal" id="offerModal">
+    <div class="modal-box offer-box">
+      <button class="close-button" data-close="offerModal" aria-label="Close offer">×</button>
+      <p class="eyebrow">CocoBiz Special Offer</p>
+      <h2 id="customerOfferTitle">Special Offer</h2>
+      <div id="customerOfferImageWrap" class="customer-offer-image-wrap"></div>
     </div>
   </div>
 

@@ -26,6 +26,7 @@
   let salesmen = [];
   let publicSalesmanId = new URLSearchParams(window.location.search).get("salesman") || "";
   let publicSalesmanProfile = null;
+  let activeOffer = null;
 
   const money = value =>
     `₹${Number(value || 0).toLocaleString("en-IN", {
@@ -55,6 +56,107 @@
       if (snap.exists && (snap.data().role === "salesman" || snap.data().role == null) && snap.data().active !== false) publicSalesmanProfile = { id: snap.id, ...snap.data(), role: "salesman" };
       else publicSalesmanId = "";
     } catch (e) { console.warn("Public salesman profile load failed", e); }
+  }
+
+  async function loadOffer() {
+    activeOffer = null;
+    if (!db) return;
+    try {
+      const snap = await db.collection("offers").doc("active").get();
+      if (snap.exists && snap.data().active !== false && snap.data().image) {
+        activeOffer = { id: snap.id, ...snap.data() };
+      }
+      renderOfferAdmin();
+    } catch (e) {
+      console.warn("Offer load failed:", e);
+    }
+  }
+
+  function renderCustomerOffer() {
+    const modal = $("offerModal");
+    const imageWrap = $("customerOfferImageWrap");
+    const title = $("customerOfferTitle");
+    if (!modal || !imageWrap || !activeOffer?.image) return;
+    if (title) title.textContent = activeOffer.title || "Special Offer";
+    imageWrap.innerHTML = `<img src="${activeOffer.image}" alt="${escapeHtml(activeOffer.title || "CocoBiz Offer")}">`;
+    modal.classList.remove("hidden");
+  }
+
+  function renderOfferAdmin() {
+    const box = $("offerAdminPreview");
+    if (!box) return;
+    if (!activeOffer?.image) {
+      box.innerHTML = `<p class="modal-subtitle">No active offer uploaded.</p>`;
+      return;
+    }
+    box.innerHTML = `
+      <div class="offer-preview-card">
+        <div><strong>${escapeHtml(activeOffer.title || "Special Offer")}</strong><small>Active customer popup</small></div>
+        <img src="${activeOffer.image}" alt="Offer preview">
+        <button class="delete-button" type="button" id="deleteOfferInline">🗑 Delete Active Offer</button>
+      </div>`;
+    $("deleteOfferInline")?.addEventListener("click", deleteOffer);
+  }
+
+  function compressImage(file, maxSize = 1200, quality = 0.78) {
+    return new Promise((resolve, reject) => {
+      if (!file || !file.type.startsWith("image/")) return reject(new Error("Valid image file select करें।"));
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        img.onerror = () => reject(new Error("Image read नहीं हो सकी।"));
+        img.src = reader.result;
+      };
+      reader.onerror = () => reject(new Error("Image read नहीं हो सकी।"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function saveOffer(event) {
+    event.preventDefault();
+    if (currentRole !== "admin") return;
+    const file = $("offerImage")?.files?.[0];
+    if (!file) { alert("Offer poster select करें।"); return; }
+    try {
+      const image = await compressImage(file);
+      if (image.length > 900000) {
+        alert("Image बहुत बड़ी है। थोड़ा छोटा/हल्का poster upload करें।");
+        return;
+      }
+      const title = $("offerTitle")?.value.trim() || "Special Offer";
+      await db.collection("offers").doc("active").set({
+        title, image, active: true, updatedAt: Date.now(), updatedBy: auth.currentUser.uid
+      });
+      await loadOffer();
+      alert("Offer successfully upload/update हो गया। अब customer को popup दिखेगा।");
+      $("offerForm")?.reset();
+    } catch (error) {
+      alert(`Offer upload नहीं हुआ: ${errorText(error)}`);
+    }
+  }
+
+  async function deleteOffer() {
+    if (currentRole !== "admin") return;
+    if (!activeOffer) return;
+    if (!confirm("Active offer delete करना है? Customer को popup दिखना बंद हो जाएगा.")) return;
+    try {
+      await db.collection("offers").doc("active").delete();
+      activeOffer = null;
+      renderOfferAdmin();
+      $("offerModal")?.classList.add("hidden");
+      alert("Offer delete हो गया।");
+    } catch (error) {
+      alert(`Offer delete नहीं हुआ: ${errorText(error)}`);
+    }
   }
 
   const errorText = error => {
@@ -328,6 +430,9 @@
     $("logoutButton")?.addEventListener("click", logoutAdmin);
     $("forgotPasswordButton")?.addEventListener("click", sendPasswordReset);
     $("salesmenTab")?.addEventListener("click", () => showAdminPanel("salesmen"));
+    $("offersTab")?.addEventListener("click", () => showAdminPanel("offers"));
+    $("offerForm")?.addEventListener("submit", saveOffer);
+    $("deleteOfferButton")?.addEventListener("click", deleteOffer);
     $("salesmanForm")?.addEventListener("submit", createSalesman);
     $("salesmenList")?.addEventListener("click", event => {
       const reset = event.target.closest("[data-reset-salesman]");
@@ -560,8 +665,12 @@
     renderSalesDashboard();
     fillSaleProducts();
     fillCustomers();
-    if (currentRole === "admin") await loadSalesmen();
+    if (currentRole === "admin") {
+      await loadSalesmen();
+      await loadOffer();
+    }
     $("salesmenTab")?.classList.toggle("hidden", currentRole !== "admin");
+    $("offersTab")?.classList.toggle("hidden", currentRole !== "admin");
     $("productForm")?.classList.toggle("hidden", currentRole === "salesman");
   }
 
@@ -571,7 +680,8 @@
       sale: "salePanel",
       products: "productsPanel",
       orders: "ordersPanel",
-      salesmen: "salesmenPanel"
+      salesmen: "salesmenPanel",
+      offers: "offersPanel"
     };
 
     Object.values(panels).forEach(id => {
@@ -591,6 +701,7 @@
     if (name === "orders") renderOrders();
     if (name === "sale") { fillSaleProducts(); fillCustomers(); }
     if (name === "salesmen" && currentRole === "admin") loadSalesmen();
+    if (name === "offers" && currentRole === "admin") loadOffer();
     if (name === "products" && currentRole === "salesman") renderSalesmanProducts();
   }
 
@@ -1094,16 +1205,14 @@
     const modal = $("orderSuccessModal");
     if (!modal) return;
 
-    const contact = String(customerNumber || "").replace(/\D/g, "");
-    const whatsapp = contact.length === 10 ? "91" + contact : contact;
-
     const wa = $("successWhatsApp");
     const call = $("successCall");
 
+    // Always contact the CocoBiz business number, never the customer's own number.
     if (wa) {
-      wa.href = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(`CocoBiz order ${orderId} successfully received. Customer: ${customerNumber || "N/A"}`)}`;
+      wa.href = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(`CocoBiz order ${orderId} successfully received.`)}`;
     }
-    if (call) call.href = `tel:${WHATSAPP_NUMBER}`;
+    if (call) call.href = `tel:+${WHATSAPP_NUMBER}`;
 
     if ($("successOrderId")) $("successOrderId").textContent = orderId;
     modal.classList.remove("hidden");
@@ -1610,8 +1719,9 @@
 
   async function loadInitialData() {
     await loadPublicSalesmanProfile();
-    await Promise.all([loadProducts(), loadOrders()]);
+    await Promise.all([loadProducts(), loadOrders(), loadOffer()]);
     renderProducts();
+    renderCustomerOffer();
     updateCart();
   }
 

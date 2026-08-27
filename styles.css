@@ -509,3 +509,19 @@ select {
 .salesman-folder .admin-product-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
 .salesman-folder .admin-product-actions button { flex:1 1 180px; }
 .credentials-box { word-break:break-word; }
+
+/* Offer popup */
+.offer-customer-modal { z-index: 50; }
+.offer-box { max-width: 620px; text-align: center; position: relative; overflow: hidden; }
+.offer-box h2 { margin: 4px 0 16px; }
+.customer-offer-image-wrap { width: 100%; display: flex; justify-content: center; align-items: center; }
+.customer-offer-image-wrap img { display:block; width:100%; max-height:72vh; object-fit:contain; border-radius:16px; box-shadow:0 12px 30px rgba(59,33,27,.16); }
+.offer-admin-preview { margin-top:18px; }
+.offer-preview-card { display:grid; gap:12px; padding:16px; border:1px solid var(--border); border-radius:16px; background:#fffaf6; }
+.offer-preview-card > div { display:grid; gap:3px; text-align:left; }
+.offer-preview-card small { color:var(--muted); }
+.offer-preview-card img { width:100%; max-height:360px; object-fit:contain; border-radius:12px; background:#f7eee8; }
+@media(max-width:600px){
+  .offer-box { width:calc(100vw - 24px); padding:18px 12px; }
+  .customer-offer-image-wrap img { max-height:70vh; border-radius:12px; }
+}

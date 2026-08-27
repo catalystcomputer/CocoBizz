@@ -36,6 +36,15 @@ service cloud.firestore {
       );
     }
 
+
+    match /offers/{offerId} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null && (
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
+      );
+    }
+
     // Only non-sensitive fields needed by a shared salesman catalogue are public.
     match /publicSalesmen/{salesmanId} {
       allow read: if true;
