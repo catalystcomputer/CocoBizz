@@ -27,6 +27,10 @@
   let publicSalesmanId = new URLSearchParams(window.location.search).get("salesman") || "";
   let publicSalesmanProfile = null;
   let activeOffer = null;
+  let reportPeriod = "all";
+  let knownOrderIds = new Set();
+  let notificationPrimed = false;
+  let orderPollTimer = null;
 
   const money = value =>
     `₹${Number(value || 0).toLocaleString("en-IN", {
@@ -292,10 +296,11 @@
                 : ""
             }
           </div>
+          ${product.stock != null ? `<div class="stock-label ${Number(product.stock) <= 10 ? "stock-low" : ""}">${Number(product.stock) > 0 ? `${Number(product.stock)} in stock` : "Out of stock"}</div>` : ""}
 
           <button class="primary-button add-cart-button"
-                  data-id="${escapeHtml(product.id)}">
-            Add to Order
+                  data-id="${escapeHtml(product.id)}" ${product.stock != null && Number(product.stock) <= 0 ? "disabled" : ""}>
+            ${product.stock != null && Number(product.stock) <= 0 ? "Out of Stock" : "Add to Order"}
           </button>
         </div>
       </article>
@@ -334,6 +339,7 @@
           name: product.name,
           quantity: safeQuantity,
           price,
+          costPrice: product.costPrice == null ? null : Number(product.costPrice),
           total: price * safeQuantity
         };
       })
@@ -429,6 +435,10 @@
     $("loginForm")?.addEventListener("submit", loginAdmin);
     $("logoutButton")?.addEventListener("click", logoutAdmin);
     $("forgotPasswordButton")?.addEventListener("click", sendPasswordReset);
+    $("reportPeriod")?.addEventListener("change", event => { reportPeriod = event.target.value; renderSalesDashboard(); });
+    $("exportDataButton")?.addEventListener("click", exportBusinessCSV);
+    $("backupDataButton")?.addEventListener("click", exportFullBackup);
+    $("enableNotificationsButton")?.addEventListener("click", enableOrderNotifications);
     $("salesmenTab")?.addEventListener("click", () => showAdminPanel("salesmen"));
     $("offersTab")?.addEventListener("click", () => showAdminPanel("offers"));
     $("offerForm")?.addEventListener("submit", saveOffer);
@@ -460,6 +470,13 @@
     $("ordersTab")?.addEventListener("click", () =>
       showAdminPanel("orders")
     );
+
+    $("customerAccountBody")?.addEventListener("click", event => {
+      const reminder = event.target.closest("[data-remind-customer]");
+      const bill = event.target.closest("[data-bill-customer-order]");
+      if (reminder) sendDueReminder(decodeURIComponent(reminder.dataset.remindCustomer));
+      if (bill) printOrderBill(bill.dataset.billCustomerOrder);
+    });
 
     $("adminOrders")?.addEventListener("click", event => {
       const returnButton = event.target.closest("[data-return-order]");
@@ -743,6 +760,8 @@
               <small>
                 <br>Sale: ${money(product.salePrice)}
                 <br>Actual: ${money(product.actualPrice)}
+                <br>Cost: ${product.costPrice == null ? "Not set" : money(product.costPrice)}
+                <br>Stock: ${product.stock == null ? "Not tracked" : Number(product.stock)}
               </small>
             </div>
 
@@ -824,6 +843,10 @@
     const description = $("productDescription").value.trim();
     const actualPrice = Number($("actualPrice").value);
     const salePrice = Number($("salePrice").value);
+    const costRaw = $("costPrice")?.value.trim();
+    const stockRaw = $("stockQty")?.value.trim();
+    const costPrice = costRaw === "" ? null : Number(costRaw);
+    const stock = stockRaw === "" ? null : Number(stockRaw);
 
     if (!name || !description) {
       alert("Product name और description भरें।");
@@ -834,7 +857,9 @@
       !Number.isFinite(actualPrice) ||
       !Number.isFinite(salePrice) ||
       actualPrice < 0 ||
-      salePrice < 0
+      salePrice < 0 ||
+      (costPrice !== null && (!Number.isFinite(costPrice) || costPrice < 0)) ||
+      (stock !== null && (!Number.isFinite(stock) || stock < 0 || !Number.isInteger(stock)))
     ) {
       alert("Price सही भरें।");
       return;
@@ -859,6 +884,8 @@
         description,
         actualPrice,
         salePrice,
+        costPrice,
+        stock,
         image,
         createdAt: oldProduct?.createdAt || Date.now(),
         updatedAt: Date.now()
@@ -900,6 +927,8 @@
     $("productDescription").value = product.description || "";
     $("actualPrice").value = product.actualPrice ?? "";
     $("salePrice").value = product.salePrice ?? "";
+    if ($("costPrice")) $("costPrice").value = product.costPrice ?? "";
+    if ($("stockQty")) $("stockQty").value = product.stock ?? "";
     $("saveButton").textContent = "Update Product";
     $("cancelEdit")?.classList.remove("hidden");
   }
@@ -1032,6 +1061,7 @@
         productId,
         name: product.name,
         rate,
+        costPrice: product.costPrice == null ? null : Number(product.costPrice),
         quantity,
         total: rate * quantity
       });
@@ -1076,7 +1106,7 @@
       source: "self-sale",
       status: paid >= total ? "received" : "accepted",
       customer: { name, number, type, address: "" },
-      items: selfSaleItems.map(item => ({ id: item.productId, name: item.name, quantity: item.quantity, price: item.rate, total: item.total })),
+      items: selfSaleItems.map(item => ({ id: item.productId, name: item.name, quantity: item.quantity, price: item.rate, costPrice: item.costPrice ?? null, total: item.total })),
       total,
       originalTotal: total,
       returnedTotal: 0,
@@ -1095,8 +1125,12 @@
       }] : []
     };
 
+    let stockAdjusted = false;
     try {
+      await adjustStockForOrder(sale, -1);
+      stockAdjusted = true;
       await db.collection("orders").add(sale);
+      await loadProducts();
       selfSaleItems = [];
       $("selfSaleForm")?.reset();
       $("newSaleCustomerNameGroup")?.classList.remove("hidden");
@@ -1107,6 +1141,7 @@
       fillCustomers();
       alert("Self Sale successfully save हो गई।");
     } catch (error) {
+      if (stockAdjusted) { try { await adjustStockForOrder(sale, 1); } catch (_) {} }
       alert(`Self Sale save नहीं हुई: ${errorText(error)}`);
     }
   }
@@ -1307,6 +1342,22 @@
       : "<p class='modal-subtitle'>No orders yet.</p>";
   }
 
+  async function adjustStockForOrder(order, direction) {
+    const tracked = (order.items || []).filter(item => products.find(p => p.id === item.id)?.stock != null);
+    if (!tracked.length) return;
+    for (const item of tracked) {
+      const ref = db.collection("products").doc(item.id);
+      await db.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) return;
+        const current = Number(snap.data().stock);
+        const next = current + direction * Number(item.quantity || 0);
+        if (next < 0) throw new Error(`${item.name} ka stock insufficient hai. Available: ${current}`);
+        tx.update(ref, {stock: next, updatedAt: Date.now()});
+      });
+    }
+  }
+
   async function updateOrderStatus(orderId) {
     const order = orders.find(item => item.id === orderId);
     if (!order) return;
@@ -1317,6 +1368,7 @@
       message = "Salesman ने order accept कर दिया. अब Admin approval pending है.";
     } else if (currentRole !== "admin") return;
     try {
+      if (status === "accepted" && !["accepted","received"].includes(order.status)) await adjustStockForOrder(order, -1);
       await db.collection("orders").doc(orderId).update({ status, salesmanAcceptedAt: status === "pending_admin" ? Date.now() : (order.salesmanAcceptedAt || null), acceptedAt: status === "accepted" ? Date.now() : (order.acceptedAt || null), updatedAt: Date.now() });
       await loadOrders(); renderOrders(); renderSalesDashboard(); if(currentRole === "admin") renderSalesmen();
       alert(message);
@@ -1464,6 +1516,9 @@
           <div><small>Due</small><b>${money(due)}</b></div>
         </div>
       </div>
+      <div class="account-actions">
+        <button class="primary-button" type="button" data-remind-customer="${encodeURIComponent(key)}">📲 Send Due Reminder</button>
+      </div>
 
       ${accepted.map(order => {
         const orderTotal = Number(order.netTotal ?? order.total ?? 0);
@@ -1478,6 +1533,7 @@
             </div>
             ${(order.items || []).map(i => `<div class="selected-line"><span>${escapeHtml(i.name)} × ${i.quantity}</span><b>${money(i.total)}</b></div>`).join("")}
             <div class="order-grand-total">Order Total: ${money(orderTotal)} · Paid: ${money(orderPaid)} · <strong>Due: ${money(orderDue)}</strong></div>
+            <div class="account-order-actions"><button class="secondary-button" type="button" data-bill-customer-order="${escapeHtml(order.id)}">🧾 Bill</button></div>
             <h4>💰 Payment History</h4>
             ${history.length ? history.map(p => `<div class="payment-history-row"><span>${escapeHtml(p.date)} ${escapeHtml(p.time)}</span><b>${money(p.amount)}</b><small>${escapeHtml(p.method || "Payment")}</small></div>`).join("") : `<p class="modal-subtitle">No payment received yet.</p>`}
           </div>`;
@@ -1546,6 +1602,12 @@
         dueAmount,
         updatedAt: Date.now()
       });
+      // Returned quantity is added back to tracked stock.
+      const trackedProduct = products.find(p => p.id === item.id);
+      if (trackedProduct?.stock != null) {
+        await db.collection("products").doc(item.id).update({stock: Number(trackedProduct.stock) + qty, updatedAt: Date.now()});
+        await loadProducts();
+      }
 
       await loadOrders();
       renderOrders();
@@ -1702,19 +1764,156 @@
     }
   }
 
-  function renderSalesDashboard() {
-    // Admin dashboard totals must include only orders that Admin has accepted.
-    // Salesman-pending and pending-admin orders remain visible in order/salesman tabs,
-    // but must not affect the main dashboard amounts until Admin approval.
-    const dashboardOrders = orders.filter(order => ["accepted", "received"].includes(order.status));
-    const total = dashboardOrders.reduce((sum, order) => sum + Number(order.netTotal ?? order.total ?? 0), 0);
-    const paid = dashboardOrders.reduce((sum, order) => sum + Number(order.paidAmount || 0), 0);
-    const due = dashboardOrders.reduce((sum, order) => sum + Math.max(0, Number(order.dueAmount ?? (Number(order.netTotal ?? order.total ?? 0) - Number(order.paidAmount || 0)))), 0);
+  function acceptedOrdersForReports() {
+    const accepted = orders.filter(order => ["accepted", "received"].includes(order.status));
+    if (reportPeriod === "all") return accepted;
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    if (reportPeriod === "7days") start.setDate(start.getDate() - 6);
+    return accepted.filter(order => Number(order.createdAt || 0) >= start.getTime());
+  }
 
+  function getOrderNet(order) {
+    return Number(order.netTotal ?? order.total ?? 0);
+  }
+
+  function getOrderDue(order) {
+    return Math.max(0, Number(order.dueAmount ?? (getOrderNet(order) - Number(order.paidAmount || 0))));
+  }
+
+  function estimateOrderProfit(order) {
+    let profit = 0, known = false;
+    const returnedQty = new Map();
+    (order.returns || []).forEach(r => returnedQty.set(r.productId, (returnedQty.get(r.productId)||0) + Number(r.quantity||0)));
+    (order.items || []).forEach(item => {
+      let cost = item.costPrice;
+      if (cost == null) cost = products.find(p=>p.id===item.id)?.costPrice;
+      if (cost == null) return;
+      known = true;
+      const qty = Math.max(0, Number(item.quantity||0) - Number(returnedQty.get(item.id)||0));
+      profit += (Number(item.price ?? (item.total/(Number(item.quantity)||1))) - Number(cost)) * qty;
+    });
+    return known ? profit : null;
+  }
+
+  function renderDashboardInsights(dashboardOrders) {
+    const low = products.filter(p => p.stock != null && Number(p.stock) <= 10).sort((a,b)=>Number(a.stock)-Number(b.stock));
+    const lowBox = $("lowStockList");
+    if (lowBox) lowBox.innerHTML = low.length
+      ? low.map(p => `<div class="insight-row"><span>${escapeHtml(p.name)}</span><b>${Number(p.stock)} left</b></div>`).join("")
+      : `<span class="muted">No low-stock items. Add stock quantity in Products.</span>`;
+
+    const counts = new Map();
+    dashboardOrders.forEach(order => (order.items || []).forEach(item => {
+      const key = item.id || item.name;
+      const entry = counts.get(key) || {name:item.name, qty:0, sales:0, profit:0, profitKnown:false};
+      entry.qty += Number(item.quantity || 0);
+      entry.sales += Number(item.total || 0);
+      const cost = item.costPrice == null ? products.find(p=>p.id===item.id)?.costPrice : item.costPrice;
+      if (cost != null) { entry.profit += (Number(item.price ?? 0)-Number(cost))*Number(item.quantity||0); entry.profitKnown=true; }
+      counts.set(key, entry);
+    }));
+    const top = [...counts.values()].sort((a,b)=>b.sales-a.sales).slice(0,5);
+    const topBox = $("topProductsList");
+    if (topBox) topBox.innerHTML = top.length
+      ? top.map((x,i)=>`<div class="insight-row"><span>${i+1}. ${escapeHtml(x.name)}</span><b>${x.qty} · ${money(x.sales)}${x.profitKnown ? ` · P ${money(x.profit)}` : ""}</b></div>`).join("")
+      : `<span class="muted">No sales data.</span>`;
+
+    const performance = $("salesmanPerformance");
+    if (!performance) return;
+    const map = new Map();
+    dashboardOrders.filter(o=>o.salesmanId).forEach(o=>{
+      const key=o.salesmanId;
+      const e=map.get(key)||{name:o.salesmanName||"Salesman",orders:0,sales:0,paid:0,due:0,profit:0,profitKnown:false};
+      e.orders++; e.sales+=getOrderNet(o); e.paid+=Number(o.paidAmount||0); e.due+=getOrderDue(o);
+      const p=estimateOrderProfit(o); if(p!=null){e.profit+=p;e.profitKnown=true;} map.set(key,e);
+    });
+    const rows=[...map.values()].sort((a,b)=>b.sales-a.sales);
+    performance.innerHTML=rows.length ? rows.map(x=>`<div class="report-row"><div><b>👤 ${escapeHtml(x.name)}</b><small>${x.orders} accepted order(s)</small></div><div><b>${money(x.sales)}</b><small>Received ${money(x.paid)} · Due ${money(x.due)}${x.profitKnown ? ` · Profit ${money(x.profit)}` : ""}</small></div></div>`).join("") : `<p class="modal-subtitle">No accepted salesman sales yet.</p>`;
+  }
+
+  function sendDueReminder(key) {
+    const accepted = orders.filter(o=>["accepted","received"].includes(o.status) && customerKey(o)===key);
+    if (!accepted.length) return;
+    const customer=accepted[0].customer||{};
+    const due=accepted.reduce((s,o)=>s+getOrderDue(o),0);
+    if (due<=0) { alert("Is customer ka koi due nahi hai."); return; }
+    const number=String(customer.number||"").replace(/\D/g,"");
+    if (number.length!==10) { alert("Customer ka valid 10-digit mobile number nahi mila."); return; }
+    const message=`CocoBiz – Payment Reminder\n\nDear ${customer.name||"Customer"},\nYour pending amount is ${money(due)}.\nKindly clear your outstanding payment.\n\nThank you for doing business with CocoBiz. 🍫`;
+    window.open(`https://wa.me/91${number}?text=${encodeURIComponent(message)}`,"_blank");
+  }
+
+  function exportBusinessCSV() {
+    const accepted = orders.filter(o=>["accepted","received"].includes(o.status));
+    const rows = [["Order ID","Date","Customer","Mobile","Salesman","Status","Total","Paid","Due","Products"]];
+    accepted.forEach(o=>rows.push([
+      o.id,o.date||"",o.customer?.name||"",o.customer?.number||"",o.salesmanName||"",o.status||"",
+      getOrderNet(o).toFixed(2),Number(o.paidAmount||0).toFixed(2),getOrderDue(o).toFixed(2),
+      (o.items||[]).map(i=>`${i.name} x ${i.quantity}`).join(" | ")
+    ]));
+    const csv=rows.map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8;"});
+    const url=URL.createObjectURL(blob); const a=document.createElement("a");
+    a.href=url; a.download=`cocobiz-business-${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(url);
+  }
+
+  function exportFullBackup() {
+    const backup = {
+      exportedAt: new Date().toISOString(),
+      app: "CocoBiz",
+      products,
+      orders,
+      salesmen: salesmen.map(s => ({ id:s.id, name:s.name, number:s.number, email:s.email, role:s.role, rates:s.rates || {}, active:s.active !== false }))
+    };
+    const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob); const a=document.createElement("a");
+    a.href=url; a.download=`cocobiz-full-backup-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url);
+    alert("Full business backup download ho gaya. Is file ko safe jagah par rakhein.");
+  }
+
+  async function enableOrderNotifications() {
+    if (currentRole !== "admin") { alert("Order alerts sirf Admin ke liye available hain."); return; }
+    if (!("Notification" in window)) { alert("Is browser me notifications supported nahi hain."); return; }
+    const permission=await Notification.requestPermission();
+    if (permission === "granted") { notificationPrimed=true; alert("Order alerts enabled. CocoBiz tab open rehne par naye orders ki notification milegi."); }
+    else alert("Notification permission allow nahi hua.");
+  }
+
+  function notifyNewOrders(previousOrders, newOrders) {
+    if (currentRole !== "admin" || !notificationPrimed || !window.Notification || Notification.permission !== "granted") return;
+    const prev=new Set(previousOrders.map(o=>o.id));
+    newOrders.filter(o=>!prev.has(o.id) && ["pending","pending_admin"].includes(o.status)).forEach(o=>{
+      new Notification("CocoBiz — New Order", {body:`${o.customer?.name||"Customer"} · ${money(getOrderNet(o))}\nStatus: ${o.status}`});
+    });
+  }
+
+  async function pollOrdersForNotifications() {
+    if (!db || currentRole !== "admin" || !auth?.currentUser) return;
+    try {
+      const previous=orders.slice();
+      await loadOrders();
+      notifyNewOrders(previous, orders);
+      renderOrders(); renderSalesDashboard();
+      if (currentRole === "admin") renderSalesmen();
+    } catch(e) { console.warn("Order notification poll failed",e); }
+  }
+
+  function renderSalesDashboard() {
+    const dashboardOrders = acceptedOrdersForReports();
+    const total = dashboardOrders.reduce((sum, order) => sum + getOrderNet(order), 0);
+    const paid = dashboardOrders.reduce((sum, order) => sum + Number(order.paidAmount || 0), 0);
+    const due = dashboardOrders.reduce((sum, order) => sum + getOrderDue(order), 0);
+    const profitValues = dashboardOrders.map(estimateOrderProfit).filter(v => v != null);
+    const estimatedProfit = profitValues.reduce((a,b)=>a+b,0);
     if ($("todaySale")) $("todaySale").textContent = money(total);
     if ($("todayPaid")) $("todayPaid").textContent = money(paid);
     if ($("todayDue")) $("todayDue").textContent = money(due);
+    if ($("estimatedProfit")) $("estimatedProfit").textContent = profitValues.length ? money(estimatedProfit) : "Not set";
+    if ($("acceptedOrderTotal")) $("acceptedOrderTotal").textContent = dashboardOrders.length;
     renderAcceptedOrderFolders();
+    renderDashboardInsights(dashboardOrders);
   }
 
   async function loadInitialData() {
@@ -1749,6 +1948,9 @@
       await loadInitialData();
       window.addEventListener("online", retryPendingOrders);
       setTimeout(retryPendingOrders, 1500);
+      // Lightweight in-page order alerts; no external notification service required.
+      clearInterval(orderPollTimer);
+      orderPollTimer = setInterval(pollOrdersForNotifications, 30000);
     } catch (error) {
       console.error("Firebase initialization error:", error);
       alert(`Firebase connect नहीं हो सका: ${errorText(error)}`);
