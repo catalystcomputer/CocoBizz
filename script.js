@@ -27,6 +27,7 @@
   let publicSalesmanId = new URLSearchParams(window.location.search).get("salesman") || "";
   let publicSalesmanProfile = null;
   let activeOffer = null;
+  let lastCustomerOfferId = null;
   let reportPeriod = "all";
   let knownOrderIds = new Set();
   let notificationPrimed = false;
@@ -62,44 +63,96 @@
     } catch (e) { console.warn("Public salesman profile load failed", e); }
   }
 
+  function offerTime(value) {
+    const time = value == null ? 0 : Number(value);
+    return Number.isFinite(time) ? time : 0;
+  }
+
+  function offerStatus(offer, now = Date.now()) {
+    const start = offerTime(offer.startAt);
+    const end = offerTime(offer.endAt);
+    if (offer.active === false) return "inactive";
+    if (start && now < start) return "scheduled";
+    if (end && now >= end) return "expired";
+    return "active";
+  }
+
+  function formatOfferDate(value) {
+    const time = offerTime(value);
+    if (!time) return "Not set";
+    return new Date(time).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  }
+
+  function toDateTimeLocalValue(value) {
+    const d = new Date(value);
+    const pad = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
   async function loadOffer() {
     activeOffer = null;
     if (!db) return;
     try {
-      const snap = await db.collection("offers").doc("active").get();
-      if (snap.exists && snap.data().active !== false && snap.data().image) {
-        activeOffer = { id: snap.id, ...snap.data() };
-      }
-      renderOfferAdmin();
+      const snap = await db.collection("offers").get();
+      const now = Date.now();
+      const allOffers = [];
+      snap.forEach(doc => allOffers.push({ id: doc.id, ...doc.data() }));
+
+      // Backward compatibility: the old single "active" offer is still supported.
+      const eligible = allOffers
+        .filter(offer => offerStatus(offer, now) === "active" && offer.image)
+        .sort((a, b) => offerTime(b.startAt || b.updatedAt) - offerTime(a.startAt || a.updatedAt));
+
+      if (eligible.length) activeOffer = eligible[0];
+      renderOfferAdmin(allOffers);
     } catch (e) {
       console.warn("Offer load failed:", e);
     }
   }
 
-  function renderCustomerOffer() {
+  function renderCustomerOffer(force = false) {
     const modal = $("offerModal");
     const imageWrap = $("customerOfferImageWrap");
     const title = $("customerOfferTitle");
-    if (!modal || !imageWrap || !activeOffer?.image) return;
+    if (!modal || !imageWrap) return;
+    if (!activeOffer?.image) {
+      modal.classList.add("hidden");
+      return;
+    }
+    // Show on first load and when the scheduled offer changes, but do not reopen
+    // the same popup every minute after the customer has closed it.
+    if (!force && lastCustomerOfferId === activeOffer.id) return;
+    lastCustomerOfferId = activeOffer.id;
     if (title) title.textContent = activeOffer.title || "Special Offer";
     imageWrap.innerHTML = `<img src="${activeOffer.image}" alt="${escapeHtml(activeOffer.title || "CocoBiz Offer")}">`;
     modal.classList.remove("hidden");
   }
 
-  function renderOfferAdmin() {
+  function renderOfferAdmin(allOffers = activeOffer ? [activeOffer] : []) {
     const box = $("offerAdminPreview");
     if (!box) return;
-    if (!activeOffer?.image) {
-      box.innerHTML = `<p class="modal-subtitle">No active offer uploaded.</p>`;
+    const sorted = [...allOffers].sort((a,b) => offerTime(b.startAt || b.updatedAt) - offerTime(a.startAt || a.updatedAt));
+    if (!sorted.length) {
+      box.innerHTML = `<div class="offer-empty-state"><strong>No offers scheduled.</strong><span>Poster, start time aur end time set karke pehla offer schedule karein.</span></div>`;
       return;
     }
-    box.innerHTML = `
-      <div class="offer-preview-card">
-        <div><strong>${escapeHtml(activeOffer.title || "Special Offer")}</strong><small>Active customer popup</small></div>
-        <img src="${activeOffer.image}" alt="Offer preview">
-        <button class="delete-button" type="button" id="deleteOfferInline">🗑 Delete Active Offer</button>
+
+    box.innerHTML = sorted.map(offer => {
+      const status = offerStatus(offer);
+      const badgeClass = status === "active" ? "offer-status-active" : status === "scheduled" ? "offer-status-scheduled" : "offer-status-expired";
+      const label = status === "active" ? "LIVE NOW" : status === "scheduled" ? "SCHEDULED" : status === "expired" ? "EXPIRED" : "INACTIVE";
+      return `<div class="offer-preview-card ${status === "active" ? "is-live" : ""}">
+        <div class="offer-card-heading">
+          <div><strong>${escapeHtml(offer.title || "Special Offer")}</strong><small>${formatOfferDate(offer.startAt)} → ${formatOfferDate(offer.endAt)}</small></div>
+          <span class="offer-status ${badgeClass}">${label}</span>
+        </div>
+        ${offer.image ? `<img src="${offer.image}" alt="Offer preview">` : ""}
+        <div class="offer-card-actions">
+          ${status === "active" ? `<span class="offer-live-note">Customer popup me abhi ye offer dikh raha hai.</span>` : status === "scheduled" ? `<span class="offer-live-note">Start hote hi automatically live hoga.</span>` : `<span class="offer-live-note">Ye offer customer ko nahi dikh raha.</span>`}
+          <button class="delete-button" type="button" data-delete-offer="${escapeHtml(offer.id)}">🗑 Delete</button>
+        </div>
       </div>`;
-    $("deleteOfferInline")?.addEventListener("click", deleteOffer);
+    }).join("");
   }
 
   function compressImage(file, maxSize = 1200, quality = 0.78) {
@@ -131,36 +184,54 @@
     const file = $("offerImage")?.files?.[0];
     if (!file) { alert("Offer poster select करें।"); return; }
     try {
+      const startValue = $("offerStart")?.value;
+      const endValue = $("offerEnd")?.value;
+      const startAt = new Date(startValue).getTime();
+      const endAt = new Date(endValue).getTime();
+      if (!Number.isFinite(startAt) || !Number.isFinite(endAt)) { alert("Start aur end date/time सही भरें।"); return; }
+      if (endAt <= startAt) { alert("End date/time, start date/time के बाद होना चाहिए।"); return; }
+      if (endAt <= Date.now()) { alert("End date/time future में रखें।"); return; }
+
       const image = await compressImage(file);
       if (image.length > 900000) {
         alert("Image बहुत बड़ी है। थोड़ा छोटा/हल्का poster upload करें।");
         return;
       }
       const title = $("offerTitle")?.value.trim() || "Special Offer";
-      await db.collection("offers").doc("active").set({
-        title, image, active: true, updatedAt: Date.now(), updatedBy: auth.currentUser.uid
+      await db.collection("offers").add({
+        title,
+        image,
+        active: true,
+        startAt,
+        endAt,
+        updatedAt: Date.now(),
+        updatedBy: auth.currentUser.uid
       });
       await loadOffer();
-      alert("Offer successfully upload/update हो गया। अब customer को popup दिखेगा।");
+      alert(startAt > Date.now() ? "Offer schedule हो गया। Start time पर automatically live होगा." : "Offer successfully live हो गया।");
       $("offerForm")?.reset();
     } catch (error) {
-      alert(`Offer upload नहीं हुआ: ${errorText(error)}`);
+      alert(`Offer schedule नहीं हुआ: ${errorText(error)}`);
+    }
+  }
+
+  async function deleteOfferById(id) {
+    if (currentRole !== "admin" || !id) return;
+    try {
+      await db.collection("offers").doc(id).delete();
+      await loadOffer();
+      if (!activeOffer) $("offerModal")?.classList.add("hidden");
+      alert("Offer delete हो गया।");
+    } catch (error) {
+      alert(`Offer delete नहीं हुआ: ${errorText(error)}`);
     }
   }
 
   async function deleteOffer() {
     if (currentRole !== "admin") return;
-    if (!activeOffer) return;
-    if (!confirm("Active offer delete करना है? Customer को popup दिखना बंद हो जाएगा.")) return;
-    try {
-      await db.collection("offers").doc("active").delete();
-      activeOffer = null;
-      renderOfferAdmin();
-      $("offerModal")?.classList.add("hidden");
-      alert("Offer delete हो गया।");
-    } catch (error) {
-      alert(`Offer delete नहीं हुआ: ${errorText(error)}`);
-    }
+    if (!activeOffer?.id) { alert("अभी कोई live offer नहीं है।"); return; }
+    if (!confirm("Live offer delete करना है? Customer को popup दिखना बंद हो जाएगा.")) return;
+    await deleteOfferById(activeOffer.id);
   }
 
   const errorText = error => {
@@ -443,6 +514,12 @@
     $("offersTab")?.addEventListener("click", () => showAdminPanel("offers"));
     $("offerForm")?.addEventListener("submit", saveOffer);
     $("deleteOfferButton")?.addEventListener("click", deleteOffer);
+    $("offerAdminPreview")?.addEventListener("click", event => {
+      const button = event.target.closest("[data-delete-offer]");
+      if (!button) return;
+      const id = button.dataset.deleteOffer;
+      if (confirm("Is scheduled offer ko delete karna hai?")) deleteOfferById(id);
+    });
     $("salesmanForm")?.addEventListener("submit", createSalesman);
     $("salesmenList")?.addEventListener("click", event => {
       const reset = event.target.closest("[data-reset-salesman]");
@@ -1946,6 +2023,15 @@
       });
 
       await loadInitialData();
+      // Re-check scheduled offers so start/end transitions happen automatically while the page is open.
+      setInterval(async () => {
+        if (!db) return;
+        const previousOfferId = activeOffer?.id || null;
+        await loadOffer();
+        if (document.visibilityState !== "hidden" && (activeOffer?.id || null) !== previousOfferId) {
+          renderCustomerOffer(true);
+        }
+      }, 60000);
       window.addEventListener("online", retryPendingOrders);
       setTimeout(retryPendingOrders, 1500);
       // Lightweight in-page order alerts; no external notification service required.

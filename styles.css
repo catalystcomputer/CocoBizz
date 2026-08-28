@@ -516,11 +516,20 @@ select {
 .offer-box h2 { margin: 4px 0 16px; }
 .customer-offer-image-wrap { width: 100%; display: flex; justify-content: center; align-items: center; }
 .customer-offer-image-wrap img { display:block; width:100%; max-height:72vh; object-fit:contain; border-radius:16px; box-shadow:0 12px 30px rgba(59,33,27,.16); }
-.offer-admin-preview { margin-top:18px; }
+.offer-admin-preview { margin-top:18px; display:grid; gap:14px; }
 .offer-preview-card { display:grid; gap:12px; padding:16px; border:1px solid var(--border); border-radius:16px; background:#fffaf6; }
-.offer-preview-card > div { display:grid; gap:3px; text-align:left; }
+.offer-preview-card.is-live { box-shadow:0 10px 30px rgba(120,70,30,.12); border-color:rgba(190,120,45,.45); }
+.offer-card-heading { display:flex !important; align-items:flex-start; justify-content:space-between; gap:12px; text-align:left; }
+.offer-card-heading > div { display:grid; gap:3px; }
 .offer-preview-card small { color:var(--muted); }
 .offer-preview-card img { width:100%; max-height:360px; object-fit:contain; border-radius:12px; background:#f7eee8; }
+.offer-status { display:inline-flex; align-items:center; white-space:nowrap; padding:5px 9px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:.04em; }
+.offer-status-active { background:#e8f7ed; color:#19703a; }
+.offer-status-scheduled { background:#fff3d8; color:#8a5b00; }
+.offer-status-expired { background:#f2f2f2; color:#6b7280; }
+.offer-card-actions { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+.offer-live-note { font-size:12px; color:var(--muted); }
+.offer-empty-state { display:grid; gap:5px; padding:18px; border:1px dashed var(--border); border-radius:14px; background:#fffaf6; }
 @media(max-width:600px){
   .offer-box { width:calc(100vw - 24px); padding:18px 12px; }
   .customer-offer-image-wrap img { max-height:70vh; border-radius:12px; }
@@ -553,46 +562,4 @@ select {
   .dashboard-export-actions button{flex:1}
   .report-row{display:block}
   .report-row>div:last-child{text-align:left;margin-top:8px}
-}
-
-
-/* Full-screen management panels (Admin + Salesman) */
-#adminModal {
-  padding: 0;
-  place-items: stretch;
-  overflow: hidden;
-}
-
-#adminModal .admin-box {
-  width: 100%;
-  max-width: none;
-  height: 100vh;
-  max-height: none;
-  min-height: 100vh;
-  margin: 0;
-  padding: 28px clamp(18px, 4vw, 48px);
-  border-radius: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  box-sizing: border-box;
-}
-
-/* Keep the management panel comfortable on phones */
-@media (max-width: 700px) {
-  #adminModal .admin-box {
-    padding: 20px 14px 28px;
-  }
-
-  #adminModal .admin-heading {
-    padding-right: 34px;
-  }
-
-  #adminModal .admin-tabs {
-    margin: 18px 0;
-  }
-}
-
-/* Prevent the background page from scrolling while a full-screen panel is open */
-body:has(#adminModal:not(.hidden)) {
-  overflow: hidden;
 }

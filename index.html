@@ -241,7 +241,7 @@
       </div>
 
       <div id="offersPanel" class="hidden">
-        <p class="modal-subtitle">Customer ko dikhane ke liye ek active offer poster upload karein.</p>
+        <p class="modal-subtitle">Offer poster ko schedule karein. Start hote hi customer ko popup dikhega aur end hote hi automatically hide hokar next scheduled offer show ho jayega.</p>
         <form id="offerForm" class="product-form">
           <div class="form-group full-width">
             <label for="offerTitle">Offer title</label>
@@ -252,9 +252,17 @@
             <input id="offerImage" type="file" accept="image/*" required>
             <small class="modal-subtitle">Best result ke liye JPG/PNG poster use karein.</small>
           </div>
+          <div class="form-group">
+            <label for="offerStart">Start date & time</label>
+            <input id="offerStart" type="datetime-local" required>
+          </div>
+          <div class="form-group">
+            <label for="offerEnd">End date & time</label>
+            <input id="offerEnd" type="datetime-local" required>
+          </div>
           <div class="form-actions full-width">
-            <button class="primary-button" type="submit">Upload / Update Offer</button>
-            <button class="secondary-button" type="button" id="deleteOfferButton">Delete Offer</button>
+            <button class="primary-button" type="submit">Schedule Offer</button>
+            <button class="secondary-button" type="button" id="deleteOfferButton">Delete Active Offer</button>
           </div>
         </form>
         <div id="offerAdminPreview" class="offer-admin-preview"></div>
