@@ -1,27 +1,16 @@
-# CocoBiz Updated
+CocoBiz v14
 
-Changes included:
-1. Firebase/Firestore order sync improvements + offline persistence/retry queue.
-2. Admin Panel hidden from the header; tap the CocoBiz logo to open login/admin.
-3. Firebase Auth LOCAL persistence: login remains until logout.
-4. Product search on the main page.
-5. Return-item system in Admin Orders; returned items and net total appear on the bill.
-6. Unique order-complete popup with Contact and Call buttons.
-7. Fixed deployed filename mismatches by using index.html, script.js and styles.css.
+Offer scheduling fixes:
+- Uses Firestore server data first to avoid stale scheduled-offer state.
+- Checks every 10 seconds and on tab visibility, so scheduled offers switch quickly.
+- Expired offers disappear immediately for customers.
+- Admin view cleans expired offers.
+- Firebase scheduled function physically deletes expired offers every 15 minutes.
 
-IMPORTANT - Firebase Firestore Rules:
-Use firestore.rules in Firebase Console > Firestore Database > Rules.
-The public website can create orders, but only authenticated users can read/update/delete orders.
+Deploy frontend to Vercel as usual. For automatic physical deletion, deploy Firebase Functions:
+  cd functions
+  npm install
+  cd ..
+  firebase deploy --only functions
 
-Upload these 3 website files to your hosting:
-- index.html
-- script.js
-- styles.css
-
-Keep firestore.rules for Firebase configuration.
-
-Salesman password management:
-- "Email Reset Link" sends Firebase's standard reset email.
-- "Change Password" uses the included Firebase Cloud Function: functions/adminChangeSalesmanPassword.
-- Deploy functions before using direct admin password change: firebase deploy --only functions.
-- Cloud Functions may require a Firebase billing/Blaze plan depending on the project and current Firebase terms.
+The scheduled cleanup function requires the Firebase project to support Cloud Scheduler / scheduled functions billing requirements.

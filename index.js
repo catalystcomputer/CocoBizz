@@ -1,4 +1,5 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore } = require('firebase-admin/firestore');
@@ -26,4 +27,19 @@ exports.adminChangeSalesmanPassword = onCall(async (request) => {
 
   await getAuth().updateUser(salesmanUid, { password: newPassword });
   return { success: true };
+});
+
+// Runs every 15 minutes and physically removes expired offers. The website
+// also hides expired offers immediately on the client, so customers never
+// need to wait for this cleanup job to stop seeing an expired poster.
+exports.cleanupExpiredOffers = onSchedule({ schedule: 'every 15 minutes', timeZone: 'Asia/Kolkata' }, async () => {
+  const db = getFirestore();
+  const now = Date.now();
+  const snap = await db.collection('offers').where('endAt', '<=', now).get();
+  if (snap.empty) return null;
+
+  const batch = db.batch();
+  snap.docs.forEach(doc => batch.delete(doc.ref));
+  await batch.commit();
+  return null;
 });

@@ -93,18 +93,39 @@
     activeOffer = null;
     if (!db) return;
     try {
-      const snap = await db.collection("offers").get();
+      // Always prefer the server so a newly scheduled offer is not hidden by
+      // a stale Firestore offline cache.
+      let snap;
+      try { snap = await db.collection("offers").get({ source: "server" }); }
+      catch (_) { snap = await db.collection("offers").get(); }
+
       const now = Date.now();
       const allOffers = [];
       snap.forEach(doc => allOffers.push({ id: doc.id, ...doc.data() }));
 
-      // Backward compatibility: the old single "active" offer is still supported.
+      // Pick the offer whose start time is the latest among all currently
+      // live offers. This makes back-to-back scheduled offers switch cleanly.
       const eligible = allOffers
         .filter(offer => offerStatus(offer, now) === "active" && offer.image)
         .sort((a, b) => offerTime(b.startAt || b.updatedAt) - offerTime(a.startAt || a.updatedAt));
 
       if (eligible.length) activeOffer = eligible[0];
       renderOfferAdmin(allOffers);
+
+      // If an admin is logged in, remove expired offers from Firestore.
+      // Customers simply stop seeing them automatically; this cleanup keeps
+      // the admin list tidy without requiring the customer to delete anything.
+      if (currentRole === "admin" && auth?.currentUser) {
+        const expired = allOffers.filter(o => offerStatus(o, now) === "expired");
+        await Promise.all(expired.map(o => db.collection("offers").doc(o.id).delete().catch(() => null)));
+        if (expired.length) {
+          const refreshed = await db.collection("offers").get({ source: "server" }).catch(() => null);
+          if (refreshed) {
+            const remaining = []; refreshed.forEach(doc => remaining.push({ id: doc.id, ...doc.data() }));
+            renderOfferAdmin(remaining);
+          }
+        }
+      }
     } catch (e) {
       console.warn("Offer load failed:", e);
     }
@@ -560,11 +581,13 @@
       const billButton = event.target.closest("[data-bill-order]");
       const acceptButton = event.target.closest("[data-accept-order]");
       const paymentButton = event.target.closest("[data-payment-order]");
+      const undoPaymentButton = event.target.closest("[data-undo-payment-order]");
       const deleteButton = event.target.closest("[data-delete-order]");
       if (returnButton) processReturn(returnButton.dataset.returnOrder);
       if (billButton) printOrderBill(billButton.dataset.billOrder);
       if (acceptButton) updateOrderStatus(acceptButton.dataset.acceptOrder);
       if (paymentButton) receivePayment(paymentButton.dataset.paymentOrder);
+      if (undoPaymentButton) undoLastPayment(undoPaymentButton.dataset.undoPaymentOrder);
       if (deleteButton) deleteOrder(deleteButton.dataset.deleteOrder);
     });
   }
@@ -1362,6 +1385,7 @@
           const netTotal = Number(order.netTotal ?? (Number(order.total || 0) - returnedTotal));
           const paid = Number(order.paidAmount || 0);
           const due = Math.max(0, Number(order.dueAmount ?? netTotal - paid));
+          const credit = Math.max(0, Number(order.creditAmount ?? paid - netTotal));
 
           return `
           <div class="admin-order" data-order-card="${escapeHtml(order.id)}">
@@ -1402,13 +1426,14 @@
               Original: ${money(order.total)}<br>
               ${returnedTotal ? `Returned: -${money(returnedTotal)}<br>` : ""}
               <strong>Net Total: ${money(netTotal)}</strong><br>
-              <span>Paid: ${money(paid)} · Due: ${money(due)}</span>
+              <span>Paid: ${money(paid)} · Due: ${money(due)}${credit ? ` · Credit/Refund: ${money(credit)}` : ""}</span>
             </div>
 
             <div class="admin-order-actions">
               ${currentRole === "admin" && ["pending","pending_admin"].includes(order.status) ? `<button class="primary-button" data-accept-order="${escapeHtml(order.id)}">✓ Accept Order</button>` : ""}
               ${currentRole === "salesman" && order.salesmanId === auth.currentUser?.uid && order.status === "salesman_pending" ? `<button class="primary-button" data-accept-order="${escapeHtml(order.id)}">✓ Accept & Send to Admin</button>` : ""}
               ${due > 0 && ["accepted","received"].includes(order.status) ? `<button class="secondary-button" data-payment-order="${escapeHtml(order.id)}">💰 Received Payment</button>` : ""}
+              ${currentRole === "admin" && Array.isArray(order.paymentHistory) && order.paymentHistory.length ? `<button class="secondary-button" data-undo-payment-order="${escapeHtml(order.id)}">↩ Undo Last Payment</button>` : ""}
               <button class="secondary-button" data-return-order="${escapeHtml(order.id)}">↩ Return Item</button>
               <button class="secondary-button" data-bill-order="${escapeHtml(order.id)}">🧾 Bill</button>
               <a class="secondary-button" href="tel:${escapeHtml(order.customer?.number || "")}">☎ Contact</a>
@@ -1499,6 +1524,48 @@
       alert(`Payment ${money(amount)} received successfully.`);
     } catch (error) {
       alert(`Payment save नहीं हुआ: ${errorText(error)}`);
+    }
+  }
+
+  async function undoLastPayment(orderId) {
+    if (currentRole !== "admin") return;
+    const order = orders.find(item => item.id === orderId);
+    if (!order) return;
+
+    const history = Array.isArray(order.paymentHistory) ? [...order.paymentHistory] : [];
+    if (!history.length) {
+      alert("Is order me undo karne ke liye payment history nahi hai.");
+      return;
+    }
+
+    const last = history[history.length - 1];
+    const amount = Number(last.amount || 0);
+    if (!confirm(`Last payment ${money(amount)} ko undo karna hai?\n\nPayment: ${money(amount)}\nDate: ${last.date || ""} ${last.time || ""}`)) return;
+
+    const newHistory = history.slice(0, -1);
+    const paidAmount = newHistory.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const netTotal = Number(order.netTotal ?? order.total ?? 0);
+    const dueAmount = Math.max(0, netTotal - paidAmount);
+    const creditAmount = Math.max(0, paidAmount - netTotal);
+    const status = dueAmount === 0 && paidAmount > 0 ? "received" : "accepted";
+
+    try {
+      await db.collection("orders").doc(orderId).update({
+        paymentHistory: newHistory,
+        paidAmount,
+        dueAmount,
+        creditAmount,
+        paymentReceived: paidAmount > 0,
+        paymentReceivedAt: paidAmount > 0 ? (newHistory[newHistory.length - 1]?.timestamp || null) : null,
+        status,
+        updatedAt: Date.now()
+      });
+      await loadOrders();
+      renderOrders();
+      renderSalesDashboard();
+      alert(`Last payment ${money(amount)} undo ho gaya.`);
+    } catch (error) {
+      alert(`Payment undo nahi hua: ${errorText(error)}`);
     }
   }
 
@@ -1667,8 +1734,11 @@
     const returns = [...(order.returns || []), returnEntry];
     const returnedTotal = returns.reduce((sum, r) => sum + Number(r.total || 0), 0);
     const netTotal = Math.max(0, Number(order.total || 0) - returnedTotal);
-    const paidAmount = Math.min(Number(order.paidAmount || 0), netTotal);
+    // A return must NEVER silently reduce or increase the money already received.
+    // Keep paidAmount exactly as recorded; only recalculate the new due.
+    const paidAmount = Number(order.paidAmount || 0);
     const dueAmount = Math.max(0, netTotal - paidAmount);
+    const creditAmount = Math.max(0, paidAmount - netTotal);
 
     try {
       await db.collection("orders").doc(orderId).update({
@@ -1677,6 +1747,7 @@
         netTotal,
         paidAmount,
         dueAmount,
+        creditAmount,
         updatedAt: Date.now()
       });
       // Returned quantity is added back to tracked stock.
@@ -1705,6 +1776,7 @@
     const netTotal = Number(order.netTotal ?? Math.max(0, originalTotal - returnedTotal));
     const paid = Number(order.paidAmount || 0);
     const due = Math.max(0, Number(order.dueAmount ?? netTotal - paid));
+    const credit = Math.max(0, Number(order.creditAmount ?? paid - netTotal));
     const history = Array.isArray(order.paymentHistory) ? order.paymentHistory : [];
     const status = order.status || "accepted";
     const customer = order.customer || {};
@@ -1820,7 +1892,7 @@
       <strong>Payment Details</strong><br>
       ${paymentDetails}<br>
       Total Received: ₹${paid.toFixed(2)}<br>
-      <strong>Total Due: ₹${due.toFixed(2)}</strong>
+      <strong>Total Due: ₹${due.toFixed(2)}</strong>${credit ? `<br><strong>Credit / Refund Due: ₹${credit.toFixed(2)}</strong>` : ""}
     </div>
     <div class="signature-block">
       <div class="signature-line"></div>
@@ -2024,14 +2096,21 @@
 
       await loadInitialData();
       // Re-check scheduled offers so start/end transitions happen automatically while the page is open.
-      setInterval(async () => {
+      const refreshScheduledOffer = async () => {
         if (!db) return;
         const previousOfferId = activeOffer?.id || null;
         await loadOffer();
-        if (document.visibilityState !== "hidden" && (activeOffer?.id || null) !== previousOfferId) {
+        const currentOfferId = activeOffer?.id || null;
+        if (document.visibilityState !== "hidden" && currentOfferId !== previousOfferId) {
           renderCustomerOffer(true);
         }
-      }, 60000);
+      };
+      // Check frequently enough that a scheduled start/end changes almost
+      // immediately, even when the customer leaves the page open.
+      setInterval(refreshScheduledOffer, 10000);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") refreshScheduledOffer();
+      });
       window.addEventListener("online", retryPendingOrders);
       setTimeout(retryPendingOrders, 1500);
       // Lightweight in-page order alerts; no external notification service required.
