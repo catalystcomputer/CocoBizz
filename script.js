@@ -757,7 +757,13 @@
       alert("Valid amount डालें aur due se zyada nahi hona chahiye.");
       return;
     }
-    const entry = { amount, date: new Date().toLocaleDateString("en-IN"), time: new Date().toLocaleTimeString("en-IN"), timestamp: Date.now(), method: "Manual" };
+    const methodChoice = prompt("Payment mode चुनें:\n1 = Cash\n2 = Online", "1");
+    if (methodChoice === null) return;
+    const method = String(methodChoice).trim() === "2" ? "Online" : String(methodChoice).trim() === "1" ? "Cash" : null;
+    if (!method) { alert("Sirf 1 (Cash) ya 2 (Online) चुनें।"); return; }
+    const note = prompt("Note (optional) — blank छोड़ सकते हैं:", "");
+    if (note === null) return;
+    const entry = { amount, date: new Date().toLocaleDateString("en-IN"), time: new Date().toLocaleTimeString("en-IN"), timestamp: Date.now(), method, ...(String(note).trim() ? { note: String(note).trim() } : {}) };
     try {
       const ref = db.collection("users").doc(salesmanId);
       await db.runTransaction(async tx => {
@@ -1568,6 +1574,13 @@
       return;
     }
 
+    const methodChoice = prompt("Payment mode चुनें:\n1 = Cash\n2 = Online", "1");
+    if (methodChoice === null) return;
+    const method = String(methodChoice).trim() === "2" ? "Online" : String(methodChoice).trim() === "1" ? "Cash" : null;
+    if (!method) { alert("Sirf 1 (Cash) ya 2 (Online) चुनें।"); return; }
+    const note = prompt("Note (optional) — blank छोड़ सकते हैं:", "");
+    if (note === null) return;
+
     const paidAmount = alreadyPaid + amount;
     const dueAmount = Math.max(0, netTotal - paidAmount);
     const paymentEntry = {
@@ -1575,7 +1588,8 @@
       date: new Date().toLocaleDateString("en-IN"),
       time: new Date().toLocaleTimeString("en-IN"),
       timestamp: Date.now(),
-      method: "Manual"
+      method,
+      ...(String(note).trim() ? { note: String(note).trim() } : {})
     };
     const paymentHistory = [...(order.paymentHistory || []), paymentEntry];
 
@@ -1766,7 +1780,7 @@
             <div class="order-grand-total">Order Total: ${money(orderTotal)} · Paid: ${money(orderPaid)} · <strong>Due: ${money(orderDue)}</strong></div>
             <div class="account-order-actions"><button class="secondary-button" type="button" data-bill-customer-order="${escapeHtml(order.id)}">🧾 Bill</button></div>
             <h4>💰 Payment History</h4>
-            ${history.length ? history.map(p => `<div class="payment-history-row"><span>${escapeHtml(p.date)} ${escapeHtml(p.time)}</span><b>${money(p.amount)}</b><small>${escapeHtml(p.method || "Payment")}</small></div>`).join("") : `<p class="modal-subtitle">No payment received yet.</p>`}
+            ${history.length ? history.map(p => `<div class="payment-history-row"><span>${escapeHtml(p.date)} ${escapeHtml(p.time)}</span><b>${money(p.amount)}</b><small>${escapeHtml(p.method || "Payment")}${p.note ? ` · ${escapeHtml(p.note)}` : ""}</small></div>`).join("") : `<p class="modal-subtitle">No payment received yet.</p>`}
           </div>`;
       }).join("")}
     `;
