@@ -563,3 +563,36 @@ select {
   .report-row{display:block}
   .report-row>div:last-child{text-align:left;margin-top:8px}
 }
+
+/* CocoBiz full-screen Admin / Salesman workspace */
+#adminModal {
+  padding: 0;
+  place-items: stretch;
+}
+
+#adminModal .admin-box {
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  max-height: none;
+  min-height: 100vh;
+  margin: 0;
+  border-radius: 0;
+  padding: 28px clamp(16px, 4vw, 48px);
+}
+
+@media (max-width: 600px) {
+  #adminModal .admin-box {
+    width: 100vw;
+    height: 100dvh;
+    min-height: 100dvh;
+    padding: 20px 14px;
+  }
+}
+
+.salesman-payable-dashboard{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0;padding:16px;border:1px solid #ead9cb;border-radius:14px;background:linear-gradient(135deg,#fff8f2,#fffdfb)}
+.salesman-payable-dashboard>div,.salesman-payable-card>div{padding:10px 12px;border-radius:10px;background:#fff;border:1px solid #f0e3da}
+.salesman-payable-dashboard small,.salesman-payable-card small{display:block;color:#8a776c;font-size:12px;margin-bottom:4px}
+.salesman-payable-dashboard strong,.salesman-payable-card strong{font-size:18px;color:#7b432b}
+.salesman-payable-card{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0;padding:12px;border:1px solid #ead9cb;border-radius:12px;background:#fffaf6}
+@media(max-width:700px){.salesman-payable-dashboard,.salesman-payable-card{grid-template-columns:1fr}.salesman-payable-dashboard strong,.salesman-payable-card strong{font-size:16px}}

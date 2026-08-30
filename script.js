@@ -588,6 +588,8 @@
       if (acceptButton) updateOrderStatus(acceptButton.dataset.acceptOrder);
       if (paymentButton) receivePayment(paymentButton.dataset.paymentOrder);
       if (undoPaymentButton) undoLastPayment(undoPaymentButton.dataset.undoPaymentOrder);
+      const paymentMessageButton = event.target.closest("[data-payment-message-order]");
+      if (paymentMessageButton) sendPaymentMessage(paymentMessageButton.dataset.paymentMessageOrder);
       if (deleteButton) deleteOrder(deleteButton.dataset.deleteOrder);
     });
   }
@@ -681,6 +683,35 @@
     }
   }
 
+  function getSalesmanCostTotal(order) {
+    if (!order || !order.salesmanId || !["accepted", "received"].includes(order.status)) return 0;
+    const returnedQty = new Map();
+    (order.returns || []).forEach(r => {
+      const key = r.productId || r.productName || r.name;
+      returnedQty.set(key, (returnedQty.get(key) || 0) + Number(r.quantity || 0));
+    });
+    let total = 0;
+    (order.items || []).forEach(item => {
+      let cost = item.costPrice;
+      if (cost == null) cost = products.find(p => p.id === item.id)?.costPrice;
+      if (cost == null) return;
+      const key = item.id || item.name;
+      const qty = Math.max(0, Number(item.quantity || 0) - Number(returnedQty.get(key) || 0));
+      total += Number(cost) * qty;
+    });
+    return total;
+  }
+
+  function getSalesmanReceived(salesman) {
+    return Number(salesman?.salesmanReceivedAmount || 0);
+  }
+
+  function getSalesmanReceivable(salesman) {
+    const accepted = orders.filter(o => o.salesmanId === salesman.id && ["accepted", "received"].includes(o.status));
+    const payable = accepted.reduce((sum, o) => sum + getSalesmanCostTotal(o), 0);
+    return { orders: accepted, payable, received: getSalesmanReceived(salesman), due: Math.max(0, payable - getSalesmanReceived(salesman)), credit: Math.max(0, getSalesmanReceived(salesman) - payable) };
+  }
+
   function renderSalesmen() {
     const box = $("salesmenList");
     if (!box) return;
@@ -688,23 +719,62 @@
       const so = orders.filter(o => o.salesmanId === s.id);
       const pending = so.filter(o => ["salesman_pending","pending_admin"].includes(o.status));
       const accepted = so.filter(o => ["accepted","received"].includes(o.status));
-      const paid = so.reduce((x,o)=>x+Number(o.paidAmount||0),0);
-      const due = so.reduce((x,o)=>x+Math.max(0,Number(o.dueAmount||0)),0);
-      const total = so.reduce((x,o)=>x+Number(o.netTotal ?? o.total ?? 0),0);
+      const customerPaid = so.reduce((x,o)=>x+Number(o.paidAmount||0),0);
+      const customerDue = so.reduce((x,o)=>x+Math.max(0,Number(o.dueAmount||0)),0);
+      const total = accepted.reduce((x,o)=>x+Number(o.netTotal ?? o.total ?? 0),0);
+      const receivable = getSalesmanReceivable(s);
       const share = `${window.location.origin}${window.location.pathname}?salesman=${encodeURIComponent(s.id)}`;
       return `<details class="salesman-folder admin-product">
         <summary><div class="salesman-avatar">${escapeHtml((s.name||"S").charAt(0).toUpperCase())}</div><div><strong>${escapeHtml(s.name||"Salesman")}</strong><small><br>${escapeHtml(s.number||"")} · ${escapeHtml(s.email||"")}</small></div><span class="folder-count">${so.length} orders</span></summary>
         <div class="salesman-folder-body">
-          <div class="sale-summary salesman-summary"><div><small>Total Orders</small><strong>${so.length}</strong></div><div><small>Accepted</small><strong>${accepted.length}</strong></div><div><small>Pending</small><strong>${pending.length}</strong></div><div><small>Due</small><strong>${money(due)}</strong></div></div>
-          <p><b>Total:</b> ${money(total)} · <b>Received:</b> ${money(paid)} · <b>Due:</b> ${money(due)}</p>
+          <div class="sale-summary salesman-summary"><div><small>Total Orders</small><strong>${so.length}</strong></div><div><small>Accepted</small><strong>${accepted.length}</strong></div><div><small>Pending</small><strong>${pending.length}</strong></div><div><small>Customer Due</small><strong>${money(customerDue)}</strong></div></div>
+          <div class="salesman-payable-card"><div><small>Salesman ko aapko dena hai (Cost Rate)</small><strong>${money(receivable.payable)}</strong></div><div><small>Salesman se Received</small><strong>${money(receivable.received)}</strong></div><div><small>Salesman se Lena Baaki</small><strong>${money(receivable.due)}</strong></div>${receivable.credit ? `<div><small>Extra Received / Credit</small><strong>${money(receivable.credit)}</strong></div>` : ""}</div>
+          <p><b>Customer Sales:</b> ${money(total)} · <b>Customer Received:</b> ${money(customerPaid)} · <b>Customer Due:</b> ${money(customerDue)}</p>
           <div class="share-link-box"><input readonly value="${escapeHtml(share)}"><button class="secondary-button" data-copy-salesman-link="${escapeHtml(share)}">Copy Link</button></div>
           <div class="salesman-order-list">${so.length ? so.map(o=>`<div class="salesman-order-row"><div><b>#${escapeHtml(o.id)}</b> · ${escapeHtml(o.customer?.name||"Customer")}<br><small>${escapeHtml(o.date||"")}</small></div><div><b>${money(o.netTotal ?? o.total)}</b><br><span class="status-badge">${escapeHtml(o.status||"pending")}</span></div></div>`).join("") : '<p class="modal-subtitle">No orders yet.</p>'}</div>
-          <div class="admin-product-actions"><button class="secondary-button" data-reset-salesman="${escapeHtml(s.email||"")}">Email Reset Link</button><button class="primary-button" data-change-salesman-password="${escapeHtml(s.id)}" data-salesman-email="${escapeHtml(s.email||"")}">Change Password</button></div>
+          <div class="admin-product-actions"><button class="secondary-button" data-salesman-payment="${escapeHtml(s.id)}">💰 Received Payment</button><button class="secondary-button" data-reset-salesman="${escapeHtml(s.email||"")}">Email Reset Link</button><button class="primary-button" data-change-salesman-password="${escapeHtml(s.id)}" data-salesman-email="${escapeHtml(s.email||"")}">Change Password</button></div>
         </div></details>`;
     }).join("") : `<p class="modal-subtitle">अभी कोई salesman नहीं है।</p>`;
+    box.querySelectorAll("[data-salesman-payment]").forEach(b=>b.onclick=()=>receiveSalesmanPayment(b.dataset.salesmanPayment));
     box.querySelectorAll("[data-reset-salesman]").forEach(b=>b.onclick=()=>resetSalesmanPassword(b.dataset.resetSalesman));
     box.querySelectorAll("[data-change-salesman-password]").forEach(b=>b.onclick=()=>changeSalesmanPassword(b.dataset.changeSalesmanPassword, b.dataset.salesmanEmail));
     box.querySelectorAll("[data-copy-salesman-link]").forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(b.dataset.copySalesmanLink);alert("Salesman link copied.")}catch{prompt("Link copy करें:",b.dataset.copySalesmanLink)}});
+  }
+
+  async function receiveSalesmanPayment(salesmanId) {
+    if (currentRole !== "admin") return;
+    const salesman = salesmen.find(s => s.id === salesmanId);
+    if (!salesman) return;
+    const receivable = getSalesmanReceivable(salesman);
+    if (receivable.due <= 0) {
+      alert(receivable.credit > 0 ? `Salesman se ${money(receivable.credit)} extra received hai.` : "Is salesman se abhi koi payment due nahi hai.");
+      return;
+    }
+    const raw = prompt(`Salesman se received amount डालें. Lena baaki: ${money(receivable.due)}`, String(receivable.due));
+    if (raw === null) return;
+    const amount = Number(raw);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > receivable.due) {
+      alert("Valid amount डालें aur due se zyada nahi hona chahiye.");
+      return;
+    }
+    const entry = { amount, date: new Date().toLocaleDateString("en-IN"), time: new Date().toLocaleTimeString("en-IN"), timestamp: Date.now(), method: "Manual" };
+    try {
+      const ref = db.collection("users").doc(salesmanId);
+      await db.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) throw new Error("Salesman profile nahi mila.");
+        const data = snap.data() || {};
+        const history = Array.isArray(data.salesmanPaymentHistory) ? data.salesmanPaymentHistory : [];
+        const received = Number(data.salesmanReceivedAmount || 0) + amount;
+        tx.update(ref, { salesmanReceivedAmount: received, salesmanPaymentHistory: [...history, entry], updatedAt: Date.now() });
+      });
+      await loadSalesmen();
+      await loadUserProfile(auth.currentUser);
+      renderSalesDashboard();
+      alert(`Salesman se ${money(amount)} received successfully.`);
+    } catch (error) {
+      alert(`Salesman payment save nahi hua: ${errorText(error)}`);
+    }
   }
 
   async function resetSalesmanPassword(email) {
@@ -1433,6 +1503,7 @@
               ${currentRole === "admin" && ["pending","pending_admin"].includes(order.status) ? `<button class="primary-button" data-accept-order="${escapeHtml(order.id)}">✓ Accept Order</button>` : ""}
               ${currentRole === "salesman" && order.salesmanId === auth.currentUser?.uid && order.status === "salesman_pending" ? `<button class="primary-button" data-accept-order="${escapeHtml(order.id)}">✓ Accept & Send to Admin</button>` : ""}
               ${due > 0 && ["accepted","received"].includes(order.status) ? `<button class="secondary-button" data-payment-order="${escapeHtml(order.id)}">💰 Received Payment</button>` : ""}
+              ${paid > 0 ? `<button class="secondary-button" data-payment-message-order="${escapeHtml(order.id)}">💬 Payment Message</button>` : ""}
               ${currentRole === "admin" && Array.isArray(order.paymentHistory) && order.paymentHistory.length ? `<button class="secondary-button" data-undo-payment-order="${escapeHtml(order.id)}">↩ Undo Last Payment</button>` : ""}
               <button class="secondary-button" data-return-order="${escapeHtml(order.id)}">↩ Return Item</button>
               <button class="secondary-button" data-bill-order="${escapeHtml(order.id)}">🧾 Bill</button>
@@ -1525,6 +1596,22 @@
     } catch (error) {
       alert(`Payment save नहीं हुआ: ${errorText(error)}`);
     }
+  }
+
+  function sendPaymentMessage(orderId) {
+    const order = orders.find(item => item.id === orderId);
+    if (!order) return;
+    const rawNumber = String(order.customer?.number || "").replace(/\D/g, "");
+    if (rawNumber.length < 10) {
+      alert("Customer ka valid mobile number available nahi hai.");
+      return;
+    }
+    const number = rawNumber.length === 10 ? `91${rawNumber}` : rawNumber;
+    const paid = Number(order.paidAmount || 0);
+    const netTotal = Number(order.netTotal ?? order.total ?? 0);
+    const due = Math.max(0, Number(order.dueAmount ?? netTotal - paid));
+    const message = `CocoBiz Payment Update\n\nDear ${order.customer?.name || "Customer"},\n\nPayment of ${money(paid)} has been received for Order #${order.id}.\nTotal Bill: ${money(netTotal)}\nTotal Received: ${money(paid)}\n${due > 0 ? `Remaining Due: ${money(due)}` : "Payment fully received. Thank you!"}\n\nThank you for doing business with CocoBiz.`;
+    window.open(`https://wa.me/${number}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
   }
 
   async function undoLastPayment(orderId) {
@@ -2082,6 +2169,20 @@
     if ($("todayDue")) $("todayDue").textContent = money(due);
     if ($("estimatedProfit")) $("estimatedProfit").textContent = profitValues.length ? money(estimatedProfit) : "Not set";
     if ($("acceptedOrderTotal")) $("acceptedOrderTotal").textContent = dashboardOrders.length;
+    const salesmanPayableBox = $("salesmanPayableSummary");
+    if (salesmanPayableBox) {
+      if (currentRole === "salesman" && currentProfile) {
+        const payable = dashboardOrders.reduce((sum,o)=>sum+getSalesmanCostTotal(o),0);
+        const received = Number(currentProfile.salesmanReceivedAmount || 0);
+        const dueToAdmin = Math.max(0, payable - received);
+        salesmanPayableBox.innerHTML = `<div><small>Aapko CocoBiz ko dena hai (Cost Rate)</small><strong>${money(payable)}</strong></div><div><small>Admin ko aapne diya</small><strong>${money(received)}</strong></div><div><small>Abhi dena baaki</small><strong>${money(dueToAdmin)}</strong></div>`;
+        salesmanPayableBox.classList.remove("hidden");
+      } else if (currentRole === "admin") {
+        const totalReceivable = salesmen.reduce((sum,s)=>sum+getSalesmanReceivable(s).due,0);
+        salesmanPayableBox.innerHTML = `<div><small>Salesmen se Lena Baaki (Cost Rate)</small><strong>${money(totalReceivable)}</strong></div>`;
+        salesmanPayableBox.classList.remove("hidden");
+      } else { salesmanPayableBox.classList.add("hidden"); }
+    }
     renderAcceptedOrderFolders();
     renderDashboardInsights(dashboardOrders);
   }
