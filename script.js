@@ -1687,15 +1687,31 @@
     modal.classList.remove("hidden");
   }
 
+  function cleanFirestoreValue(value) {
+    if (Array.isArray(value)) return value.map(cleanFirestoreValue);
+    if (value && typeof value === "object" && !(value instanceof Date)) {
+      const out = {};
+      Object.entries(value).forEach(([key, val]) => {
+        if (val !== undefined) out[key] = cleanFirestoreValue(val);
+      });
+      return out;
+    }
+    return value;
+  }
+
   async function processReturn(orderId) {
     const order = orders.find(item => item.id === orderId);
     if (!order) return;
 
+    // Some older orders may not have an item.id. Firestore rejects undefined
+    // values inside arrays, so always use a stable fallback key.
+    const itemKey = (item) => String(item?.id ?? item?.productId ?? item?.sku ?? item?.name ?? "");
     const available = (order.items || []).filter(item => {
+      const key = itemKey(item);
       const returnedQty = (order.returns || [])
-        .filter(r => r.productId === item.id)
+        .filter(r => itemKey(r) === key)
         .reduce((sum, r) => sum + Number(r.quantity || 0), 0);
-      return Number(item.quantity) - returnedQty > 0;
+      return Number(item.quantity || 0) - returnedQty > 0;
     });
 
     if (!available.length) {
@@ -1711,10 +1727,11 @@
     if (!Number.isInteger(selected) || selected < 1 || selected > available.length) return;
 
     const item = available[selected - 1];
+    const productId = itemKey(item);
     const alreadyReturned = (order.returns || [])
-      .filter(r => r.productId === item.id)
+      .filter(r => itemKey(r) === productId)
       .reduce((sum, r) => sum + Number(r.quantity || 0), 0);
-    const maxQty = Number(item.quantity) - alreadyReturned;
+    const maxQty = Number(item.quantity || 0) - alreadyReturned;
 
     const qty = Number(prompt(`"${item.name}" ki kitni quantity return hui? (1-${maxQty})`, "1"));
     if (!Number.isInteger(qty) || qty < 1 || qty > maxQty) {
@@ -1722,13 +1739,15 @@
       return;
     }
 
+    const unitPrice = Number(item.price ?? item.rate ?? 0);
     const returnEntry = {
-      productId: item.id,
-      name: item.name,
+      productId,
+      name: String(item.name ?? "Product"),
       quantity: qty,
-      price: Number(item.price || 0),
-      total: Number(item.price || 0) * qty,
-      date: new Date().toLocaleString("en-IN")
+      price: unitPrice,
+      total: unitPrice * qty,
+      date: new Date().toLocaleString("en-IN"),
+      timestamp: Date.now()
     };
 
     const returns = [...(order.returns || []), returnEntry];
@@ -1741,19 +1760,21 @@
     const creditAmount = Math.max(0, paidAmount - netTotal);
 
     try {
-      await db.collection("orders").doc(orderId).update({
+      const returnUpdate = cleanFirestoreValue({
         returns,
         returnedTotal,
         netTotal,
+        // Payment received is NEVER changed by a return.
         paidAmount,
         dueAmount,
         creditAmount,
         updatedAt: Date.now()
       });
+      await db.collection("orders").doc(orderId).update(returnUpdate);
       // Returned quantity is added back to tracked stock.
-      const trackedProduct = products.find(p => p.id === item.id);
-      if (trackedProduct?.stock != null) {
-        await db.collection("products").doc(item.id).update({stock: Number(trackedProduct.stock) + qty, updatedAt: Date.now()});
+      const trackedProduct = products.find(p => p.id === item.id || p.id === productId);
+      if (trackedProduct?.stock != null && trackedProduct.id) {
+        await db.collection("products").doc(trackedProduct.id).update({stock: Number(trackedProduct.stock) + qty, updatedAt: Date.now()});
         await loadProducts();
       }
 
