@@ -33,7 +33,7 @@
   let knownOrderIds = new Set();
   let notificationPrimed = false;
   let orderPollTimer = null;
-  let storeSettings = { deliveryCharge: 0, freeDeliveryAbove: 0, platformFeeType: "flat", platformFeeValue: 0, onlinePaymentEnabled: false, razorpayKeyId: "" };
+  let storeSettings = { deliveryCharge: 0, freeDeliveryAbove: 0, platformFeeEnabled: false, platformFeeType: "flat", platformFeeValue: 0, upiEnabled: true, upiId: "kunalverma5555@ibl", upiName: "CocoBiz", onlinePaymentEnabled: false, razorpayKeyId: "" };
   const ORDER_STATUSES = [
     ["pending", "Order Placed"], ["accepted", "Confirmed"], ["packed", "Packed"],
     ["shipped", "Shipped"], ["out_for_delivery", "Out for Delivery"], ["delivered", "Delivered"],
@@ -1355,7 +1355,7 @@
     const freeAbove = Number(storeSettings.freeDeliveryAbove || 0);
     const delivery = freeAbove > 0 && subtotal >= freeAbove ? 0 : Number(storeSettings.deliveryCharge || 0);
     const feeBase = Number(storeSettings.platformFeeValue || 0);
-    const platformFee = storeSettings.platformFeeType === "percent" ? subtotal * feeBase / 100 : feeBase;
+    const platformFee = storeSettings.platformFeeEnabled ? (storeSettings.platformFeeType === "percent" ? subtotal * feeBase / 100 : feeBase) : 0;
     return { subtotal, delivery, platformFee, grandTotal: subtotal + delivery + platformFee };
   }
 
@@ -1365,10 +1365,35 @@
     const c = calculateOrderCharges(subtotal);
     box.innerHTML = `<div class="charge-row"><span>Items subtotal</span><b>${money(c.subtotal)}</b></div>
       <div class="charge-row"><span>Delivery</span><b>${c.delivery ? money(c.delivery) : "FREE"}</b></div>
-      <div class="charge-row"><span>Platform fee</span><b>${money(c.platformFee)}</b></div>
+      <div class="charge-row"><span>Platform fee</span><b>${c.platformFee ? money(c.platformFee) : "FREE"}</b></div>
       <div class="charge-row total"><span>Total payable</span><b>${money(c.grandTotal)}</b></div>`;
     const pm = $("customerPaymentMethod");
-    if (pm) { pm.disabled = !storeSettings.onlinePaymentEnabled; if (!storeSettings.onlinePaymentEnabled && pm.value === "ONLINE") pm.value = "COD"; }
+    if (pm) {
+      const onlineAllowed = !!storeSettings.onlinePaymentEnabled;
+      const upiAllowed = !!storeSettings.upiEnabled;
+      const upiOption = pm.querySelector('option[value="UPI"]');
+      const onlineOption = pm.querySelector('option[value="ONLINE"]');
+      if (upiOption) upiOption.hidden = !upiAllowed;
+      if (onlineOption) onlineOption.hidden = !onlineAllowed;
+      if (pm.value === "UPI" && !upiAllowed) pm.value = "COD";
+      if (pm.value === "ONLINE" && !onlineAllowed) pm.value = upiAllowed ? "UPI" : "COD";
+    }
+    const upiBox = $("upiPaymentBox");
+    if (upiBox) {
+      const show = $("customerPaymentMethod")?.value === "UPI" && !!storeSettings.upiEnabled;
+      upiBox.classList.toggle("hidden", !show);
+      if (show) {
+        const upiId = storeSettings.upiId || "kunalverma5555@ibl";
+        const name = encodeURIComponent(storeSettings.upiName || "CocoBiz");
+        const amount = Number(c.grandTotal || 0).toFixed(2);
+        const txn = `CB-${Date.now()}`;
+        const note = encodeURIComponent(`CocoBiz Order ${txn}`);
+        const uri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${name}&am=${amount}&cu=INR&tn=${note}`;
+        if ($("upiIdDisplay")) $("upiIdDisplay").textContent = upiId;
+        if ($("upiAmountText")) $("upiAmountText").textContent = `Pay ${money(c.grandTotal)}`;
+        if ($("upiPayButton")) $("upiPayButton").href = uri;
+      }
+    }
   }
 
   async function loadStoreSettings() {
@@ -1384,8 +1409,12 @@
     storeSettings = {
       deliveryCharge: Math.max(0, Number($("deliveryCharge").value || 0)),
       freeDeliveryAbove: Math.max(0, Number($("freeDeliveryAbove").value || 0)),
+      platformFeeEnabled: $("platformFeeEnabled").checked,
       platformFeeType: $("platformFeeType").value,
       platformFeeValue: Math.max(0, Number($("platformFeeValue").value || 0)),
+      upiEnabled: $("upiEnabled").checked,
+      upiId: $("upiId").value.trim() || "kunalverma5555@ibl",
+      upiName: "CocoBiz",
       onlinePaymentEnabled: $("onlinePaymentEnabled").checked,
       razorpayKeyId: $("razorpayKeyId").value.trim(),
       updatedAt: Date.now()
@@ -1397,8 +1426,11 @@
   function renderStoreSettings() {
     if ($("deliveryCharge")) $("deliveryCharge").value = storeSettings.deliveryCharge || 0;
     if ($("freeDeliveryAbove")) $("freeDeliveryAbove").value = storeSettings.freeDeliveryAbove || "";
+    if ($("platformFeeEnabled")) $("platformFeeEnabled").checked = !!storeSettings.platformFeeEnabled;
     if ($("platformFeeType")) $("platformFeeType").value = storeSettings.platformFeeType || "flat";
     if ($("platformFeeValue")) $("platformFeeValue").value = storeSettings.platformFeeValue || 0;
+    if ($("upiEnabled")) $("upiEnabled").checked = storeSettings.upiEnabled !== false;
+    if ($("upiId")) $("upiId").value = storeSettings.upiId || "kunalverma5555@ibl";
     if ($("onlinePaymentEnabled")) $("onlinePaymentEnabled").checked = !!storeSettings.onlinePaymentEnabled;
     if ($("razorpayKeyId")) $("razorpayKeyId").value = storeSettings.razorpayKeyId || "";
   }
@@ -1479,7 +1511,8 @@
       paidAmount: 0,
       dueAmount: total,
       paymentMethod: $("customerPaymentMethod")?.value || "COD",
-      paymentStatus: "pending",
+      paymentStatus: $("customerPaymentMethod")?.value === "UPI" && $("upiUtr")?.value.trim() ? "submitted" : "pending",
+      utr: $("customerPaymentMethod")?.value === "UPI" ? ($("upiUtr")?.value.trim() || null) : null,
       paymentHistory: [],
       salesmanId: publicSalesmanId || null,
       salesmanName: publicSalesmanProfile?.name || null,
@@ -1514,7 +1547,8 @@
         "",
         ...items.map(item => `${item.name} × ${item.quantity} = ${money(item.total)}`),
         "",
-        `Subtotal: ${money(charges.subtotal)}`, `Delivery: ${charges.delivery ? money(charges.delivery) : "FREE"}`, `Platform fee: ${money(charges.platformFee)}`, `Total: ${money(total)}`, `Payment: ${data.paymentMethod}`,
+        `Subtotal: ${money(charges.subtotal)}`, `Delivery: ${charges.delivery ? money(charges.delivery) : "FREE"}`, `Platform fee: ${charges.platformFee ? money(charges.platformFee) : "FREE"}`, `Total: ${money(total)}`, `Payment: ${data.paymentMethod}`,
+        ...(data.paymentMethod === "UPI" ? [`UPI ID: ${storeSettings.upiId}`, `UTR: ${data.utr || "Not submitted"}`] : []),
         `Name: ${data.customer.name}`,
         `Mobile: ${data.customer.number}`,
         `Address: ${data.customer.address}`,

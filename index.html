@@ -266,13 +266,16 @@
         <form id="storeSettingsForm" class="product-form">
           <div class="form-group"><label for="deliveryCharge">Delivery charge (₹)</label><input id="deliveryCharge" type="number" min="0" step="0.01" value="0"></div>
           <div class="form-group"><label for="freeDeliveryAbove">Free delivery above (₹) <small>(optional)</small></label><input id="freeDeliveryAbove" type="number" min="0" step="0.01" placeholder="e.g. 999"></div>
-          <div class="form-group"><label for="platformFeeType">Platform fee</label><select id="platformFeeType"><option value="flat">Flat ₹</option><option value="percent">Percentage %</option></select></div>
+          <div class="form-group"><label><input id="platformFeeEnabled" type="checkbox"> Platform fee enable</label></div>
+          <div class="form-group"><label for="platformFeeType">Platform fee type</label><select id="platformFeeType"><option value="flat">Flat ₹</option><option value="percent">Percentage %</option></select></div>
           <div class="form-group"><label for="platformFeeValue">Platform fee value</label><input id="platformFeeValue" type="number" min="0" step="0.01" value="0"></div>
+          <div class="form-group"><label><input id="upiEnabled" type="checkbox" checked> Enable UPI / QR payment</label></div>
+          <div class="form-group"><label for="upiId">UPI ID</label><input id="upiId" type="text" value="kunalverma5555@ibl" placeholder="yourupi@bank"></div>
           <div class="form-group full-width"><label><input id="onlinePaymentEnabled" type="checkbox"> Enable online payment (Razorpay)</label></div>
           <div class="form-group full-width"><label for="razorpayKeyId">Razorpay Key ID <small>(public key only)</small></label><input id="razorpayKeyId" type="text" placeholder="rzp_test_... or rzp_live_..."></div>
           <div class="form-actions full-width"><button class="primary-button" type="submit">Save Store Settings</button></div>
         </form>
-        <div class="settings-note">🔐 Razorpay Secret Key website me kabhi mat daalna. Woh Firebase Cloud Functions me secure secret ke roop me set hoga.</div>
+        <div class="settings-note">💡 Platform fee ko OFF karke customer ko ₹0 / FREE dikha sakte hain. Delivery charge aur free-delivery threshold bhi yahin set hoga.<br>📲 UPI/QR payment manual verification ke liye hai: customer payment ke baad UTR/transaction ID submit karega.</div>
       </div>
 
       <div id="offersPanel" class="hidden">
@@ -359,8 +362,25 @@
           <label for="customerPaymentMethod">Payment method</label>
           <select id="customerPaymentMethod" required>
             <option value="COD">Cash on Delivery</option>
-            <option value="ONLINE">Online Payment</option>
+            <option value="UPI">UPI / QR Payment</option>
+            <option value="ONLINE">Online Payment (Razorpay)</option>
           </select>
+        </div>
+
+        <div id="upiPaymentBox" class="upi-payment-box hidden">
+          <div class="upi-payment-head"><strong>📲 Pay using UPI</strong><span id="upiAmountText"></span></div>
+          <div class="upi-payment-content">
+            <img src="assets/cocobiz_upi_qr.png" alt="CocoBiz UPI QR" class="upi-qr">
+            <div class="upi-payment-info">
+              <div class="upi-id-row"><span>UPI ID</span><b id="upiIdDisplay">kunalverma5555@ibl</b></div>
+              <a id="upiPayButton" class="secondary-button upi-pay-button" href="#">📱 Pay with UPI App</a>
+              <small>QR scan karke ya UPI App button se payment karein. Payment ke baad UTR / Transaction ID neeche enter karein.</small>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="upiUtr">UTR / Transaction ID <small>(payment ke baad)</small></label>
+            <input id="upiUtr" type="text" maxlength="40" placeholder="e.g. 123456789012">
+          </div>
         </div>
 
         <div class="form-group">
