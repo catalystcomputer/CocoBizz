@@ -17,3 +17,6 @@ V22 updates:
 - Platform fee can be enabled/disabled; disabled displays FREE/₹0.
 - Delivery charge + free delivery threshold remain configurable in Store Settings.
 - UPI/COD/Razorpay payment options can be enabled independently.
+
+
+V23 fixes: UPI QR is embedded directly in index.html to prevent broken-image errors after deployment. Admin Store Settings navigation now opens correctly. Added QR preview inside Store Settings.

@@ -609,3 +609,13 @@ select {
 
 /* UPI payment */
 .upi-payment-box{border:1px solid var(--border);border-radius:14px;padding:14px;margin:10px 0;background:#fffaf7}.upi-payment-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.upi-payment-content{display:flex;gap:16px;align-items:center;flex-wrap:wrap}.upi-qr{width:180px;height:180px;object-fit:contain;border-radius:12px;background:#111}.upi-payment-info{display:flex;flex-direction:column;gap:10px;flex:1;min-width:220px}.upi-id-row{display:flex;gap:8px;flex-direction:column}.upi-id-row b{word-break:break-all}.upi-pay-button{display:inline-flex!important;align-items:center;justify-content:center;text-decoration:none}.upi-payment-box small{line-height:1.5;color:#6f6259}@media(max-width:600px){.upi-qr{width:150px;height:150px}.upi-payment-content{justify-content:center}.upi-payment-info{width:100%;min-width:0}}
+
+/* V23 fixes */
+.settings-qr-preview { margin-top: 4px; }
+.settings-qr-card {
+  display: flex; align-items: center; justify-content: center;
+  padding: 14px; border: 1px solid var(--border, #e5d8cf);
+  border-radius: 14px; background: #111; min-height: 180px;
+}
+.settings-qr-card img { width: 180px; max-width: 100%; height: auto; border-radius: 8px; display: block; }
+.upi-qr { background: #111; object-fit: contain; }

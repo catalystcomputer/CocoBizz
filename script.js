@@ -900,7 +900,8 @@
       products: "productsPanel",
       orders: "ordersPanel",
       salesmen: "salesmenPanel",
-      offers: "offersPanel"
+      offers: "offersPanel",
+      settings: "settingsPanel"
     };
 
     Object.values(panels).forEach(id => {
@@ -921,6 +922,7 @@
     if (name === "sale") { fillSaleProducts(); fillCustomers(); }
     if (name === "salesmen" && currentRole === "admin") loadSalesmen();
     if (name === "offers" && currentRole === "admin") loadOffer();
+    if (name === "settings" && currentRole === "admin") renderStoreSettings();
     if (name === "products" && currentRole === "salesman") renderSalesmanProducts();
   }
 
