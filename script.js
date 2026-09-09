@@ -362,6 +362,12 @@
       if ($("orderCount")) {
         $("orderCount").textContent = orders.length;
       }
+      // Backfill public tracking records for existing orders.
+      if (currentRole === "admin") {
+        for (const order of orders.slice(0, 200)) {
+          if (order?.clientId) syncPublicTracking(order).catch(() => {});
+        }
+      }
     } catch (error) {
       console.error("Orders load error:", error);
       orders = [];
@@ -569,7 +575,19 @@
     $("checkoutBackButton")?.addEventListener("click", () => setCheckoutStep(1));
     $("useMyLocationButton")?.addEventListener("click", useMyLocation);
     $("storeSettingsForm")?.addEventListener("submit", saveStoreSettings);
-    $("trackOrderButton")?.addEventListener("click", () => $("trackOrderModal")?.classList.remove("hidden"));
+    const openTrackOrder = () => {
+      const modal = $("trackOrderModal");
+      if (!modal) return;
+      modal.classList.remove("hidden");
+      modal.setAttribute("aria-hidden", "false");
+      setTimeout(() => $("trackOrderId")?.focus(), 50);
+    };
+    $("trackOrderButton")?.addEventListener("click", openTrackOrder);
+    // Delegated fallback: keeps Track Order working even if the header is re-rendered.
+    document.addEventListener("click", event => {
+      if (event.target?.closest?.("#trackOrderButton")) openTrackOrder();
+    });
+    window.openCocoBizTrackOrder = openTrackOrder;
     $("trackOrderForm")?.addEventListener("submit", trackOrder);
     $("customerPaymentMethod")?.addEventListener("change", renderOrderCharges);
     $("upiPayButton")?.addEventListener("click", event => {
@@ -1554,7 +1572,10 @@
         updatedAt: extra.updatedAt ?? Date.now(),
         createdAt: order.createdAt || Date.now()
       };
-      await db.collection('publicOrderTracking').doc(String(order.clientId)).set(payload, { merge: true });
+      const trackingId = String(order.clientId).trim().replace(/^#/, '').toUpperCase();
+      payload.clientId = trackingId;
+      await db.collection('publicOrderTracking').doc(trackingId).set(payload, { merge: true });
+      try { localStorage.setItem('cocobiz_tracking_' + trackingId, JSON.stringify(payload)); } catch (_) {}
     } catch (e) {
       console.warn('Public tracking sync failed:', e?.message || e);
     }
@@ -1562,27 +1583,35 @@
 
   async function trackOrder(event) {
     event.preventDefault();
-    const id = $("trackOrderId").value.trim();
-    const mobile = $("trackMobile").value.trim();
+    const id = $("trackOrderId")?.value.trim().replace(/^#/, '').toUpperCase();
+    const mobile = $("trackMobile")?.value.replace(/\D/g, '').slice(-10);
     const box = $("trackOrderResult");
-    if (!id || !mobile) return;
-    box.innerHTML = "Searching...";
+    if (!box) return;
+    if (!id || mobile.length !== 10) {
+      box.innerHTML = `<p class="modal-subtitle">Please enter a valid Order ID and 10-digit mobile number.</p>`;
+      return;
+    }
+    box.innerHTML = `<p class="modal-subtitle">🔎 Order search ho raha hai...</p>`;
     try {
+      if (!db) throw new Error("Firebase database connect nahi hua. Page refresh karke dobara try karein.");
+      const mobileHash = await hashTrackingMobile(mobile);
       const snap = await db.collection("publicOrderTracking").doc(id).get();
       if (!snap.exists) {
-        box.innerHTML = `<p class="modal-subtitle">Order nahi mila. Order ID check karein.</p>`;
+        box.innerHTML = `<div class="tracking-empty"><strong>Order nahi mila.</strong><br><small>Order ID exactly wahi daalein jo order confirmation me mila tha.</small></div>`;
         return;
       }
       const tracking = snap.data();
-      const mobileHash = await hashTrackingMobile(mobile);
       if (tracking.mobileHash && tracking.mobileHash !== mobileHash) {
-        box.innerHTML = `<p class="modal-subtitle">Order ID aur mobile number match nahi hua.</p>`;
+        box.innerHTML = `<div class="tracking-empty"><strong>Mobile number match nahi hua.</strong><br><small>Order place karte waqt jo mobile number diya tha wahi use karein.</small></div>`;
         return;
       }
       box.innerHTML = `<div class="tracking-card"><div class="order-heading-row"><strong>#${escapeHtml(tracking.clientId || id)}</strong><span class="status-badge">${escapeHtml(statusLabel(tracking.status))}</span></div>${statusTimeline(tracking)}<div class="delivery-estimate-card">🚚 <b>Estimated Delivery</b><br>${escapeHtml(tracking.deliveryEstimate || "7–15 days")}${tracking.deliveryDistanceKm != null ? `<br><small>Approx. distance: ${Number(tracking.deliveryDistanceKm).toFixed(1)} km</small>` : ""}</div><div class="order-grand-total">Total: <strong>${money(tracking.total || 0)}</strong><br><small>Last updated: ${new Date(tracking.updatedAt || tracking.createdAt || Date.now()).toLocaleString("en-IN")}</small></div></div>`;
     } catch(e) {
       console.error('Track order error:', e);
-      box.innerHTML = `<p class="modal-subtitle">Tracking failed: ${escapeHtml(errorText(e))}</p>`;
+      const msg = String(e?.code || '').includes('permission-denied')
+        ? 'Tracking permission Firebase me deploy nahi hui hai. Firebase Console → Firestore Database → Rules me latest firestore.rules publish karein.'
+        : errorText(e);
+      box.innerHTML = `<div class="tracking-empty"><strong>Tracking open nahi ho pa raha.</strong><br><small>${escapeHtml(msg)}</small></div>`;
     }
   }
 
@@ -1767,7 +1796,7 @@
           if (ref) {
             const onlinePatch = { paymentStatus: "paid", paidAmount: total, dueAmount: 0, paymentId: data.paymentId, status: "accepted", acceptedAt: Date.now(), updatedAt: Date.now() };
             await ref.ref.update(onlinePatch);
-            await syncPublicTracking({ ...data, ...onlinePatch, netTotal: total });
+            try { await syncPublicTracking({ ...data, ...onlinePatch, netTotal: total }); } catch (trackingError) { console.warn("Tracking update deferred:", trackingError); }
           }
         } catch (paymentError) {
           alert(`Online payment complete nahi hua: ${errorText(paymentError)}\n\nOrder ko COD/pending ke roop me rakha gaya hai.`);
@@ -1822,14 +1851,30 @@
 
     const wa = $("successWhatsApp");
     const call = $("successCall");
+    const track = $("successTrack");
 
-    // Always contact the CocoBiz business number, never the customer's own number.
     if (wa) {
       wa.href = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(`CocoBiz order ${orderId} successfully received.`)}`;
     }
     if (call) call.href = `tel:+${WHATSAPP_NUMBER}`;
-
     if ($("successOrderId")) $("successOrderId").textContent = orderId;
+
+    // Make the tracking action one tap: store the details locally and open tracking.
+    try { localStorage.setItem("cocobiz_last_order", JSON.stringify({ orderId, mobile: customerNumber })); } catch (_) {}
+    if (track) {
+      track.onclick = (e) => {
+        e.preventDefault();
+        modal.classList.add("hidden");
+        const trackModal = $("trackOrderModal");
+        if (trackModal) {
+          trackModal.classList.remove("hidden");
+          trackModal.setAttribute("aria-hidden", "false");
+          if ($("trackOrderId")) $("trackOrderId").value = orderId;
+          if ($("trackMobile")) $("trackMobile").value = String(customerNumber || '').replace(/\D/g,'').slice(-10);
+          setTimeout(() => $("trackOrderForm")?.requestSubmit(), 50);
+        }
+      };
+    }
     modal.classList.remove("hidden");
   }
 

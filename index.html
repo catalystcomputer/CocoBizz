@@ -17,7 +17,7 @@
       <span>Coco<em>Biz</em></span>
     </a>
     <div class="header-actions">
-      <button class="secondary-button track-header-button" id="trackOrderButton">Track Order</button>
+      <button type="button" class="secondary-button track-header-button" id="trackOrderButton" onclick="window.openCocoBizTrackOrder && window.openCocoBizTrackOrder()">Track Order</button>
       <button class="order-button" id="openOrderButton">Order <span id="cartCount">0</span></button>
       <button class="admin-button hidden" id="adminButton" aria-hidden="true" tabindex="-1">Admin Panel</button>
     </div>
@@ -450,8 +450,10 @@
       <h2>Order Complete! 🎉</h2>
       <p class="modal-subtitle">Aapka order successfully receive ho gaya hai.</p>
       <p class="success-order-text">Order ID: <strong id="successOrderId">—</strong></p>
+      <p class="modal-subtitle success-tracking-hint">Is Order ID ko sambhal kar rakhein. Isi se aap order track kar sakte hain.</p>
       <div class="success-actions">
-        <a class="primary-button" id="successWhatsApp" target="_blank" rel="noopener">💬 Contact</a>
+        <button class="primary-button" id="successTrack" type="button">📦 Track My Order</button>
+        <a class="secondary-button" id="successWhatsApp" target="_blank" rel="noopener">💬 Contact</a>
         <a class="secondary-button" id="successCall">📞 Call</a>
       </div>
       <button class="secondary-button success-close" data-close="orderSuccessModal">Done</button>
@@ -460,7 +462,7 @@
 
 
 
-  <div class="modal hidden" id="trackOrderModal">
+  <div class="modal hidden" id="trackOrderModal" aria-hidden="true">
     <div class="modal-box admin-box">
       <button class="close-button" data-close="trackOrderModal">×</button>
       <p class="eyebrow">CocoBiz tracking</p>
