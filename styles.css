@@ -655,3 +655,7 @@ body.order-open { overflow: hidden; }
 }
 
 .tracking-empty{margin-top:16px;padding:16px;border-radius:12px;background:#fff7ed;border:1px solid #f0d5bb;color:#5a301f;line-height:1.6}.tracking-empty small{color:#78665c}.tracking-card{margin-top:16px;padding:18px;border-radius:14px;background:#fff;border:1px solid #ead9cb}.tracking-card .order-heading-row{display:flex;justify-content:space-between;align-items:center;gap:12px}.tracking-card .order-grand-total{margin-top:14px;padding-top:12px;border-top:1px solid #ead9cb}.tracking-card .delivery-estimate-card{margin-top:14px}
+
+/* Track Order must always sit above other panels and open from the main page. */
+#trackOrderModal { z-index: 9999; }
+#orderSuccessModal { z-index: 10000; }

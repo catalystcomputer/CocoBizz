@@ -17,7 +17,7 @@
       <span>Coco<em>Biz</em></span>
     </a>
     <div class="header-actions">
-      <button type="button" class="secondary-button track-header-button" id="trackOrderButton" onclick="window.openCocoBizTrackOrder && window.openCocoBizTrackOrder()">Track Order</button>
+      <button type="button" class="secondary-button track-header-button" id="trackOrderButton">Track Order</button>
       <button class="order-button" id="openOrderButton">Order <span id="cartCount">0</span></button>
       <button class="admin-button hidden" id="adminButton" aria-hidden="true" tabindex="-1">Admin Panel</button>
     </div>
@@ -505,5 +505,11 @@
   <script>
     document.getElementById("year").textContent = new Date().getFullYear();
   </script>
+<script>
+window.addEventListener("DOMContentLoaded", function(){
+  var b=document.getElementById("trackOrderButton"), m=document.getElementById("trackOrderModal");
+  if(b && m){ b.onclick=function(){ m.classList.remove("hidden"); m.style.zIndex="9999"; m.setAttribute("aria-hidden","false"); }; }
+});
+</script>
 </body>
 </html>

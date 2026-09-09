@@ -575,11 +575,18 @@
     $("checkoutBackButton")?.addEventListener("click", () => setCheckoutStep(1));
     $("useMyLocationButton")?.addEventListener("click", useMyLocation);
     $("storeSettingsForm")?.addEventListener("submit", saveStoreSettings);
-    const openTrackOrder = () => {
+    const openTrackOrder = (prefill = {}) => {
       const modal = $("trackOrderModal");
       if (!modal) return;
+      // Always open from the main page, even if another panel/modal was previously open.
+      $("adminModal")?.classList.add("hidden");
+      $("orderModal")?.classList.add("hidden");
+      $("orderSuccessModal")?.classList.add("hidden");
+      modal.style.zIndex = "9999";
       modal.classList.remove("hidden");
       modal.setAttribute("aria-hidden", "false");
+      if (prefill.orderId && $("trackOrderId")) $("trackOrderId").value = String(prefill.orderId).replace(/^#/, "").toUpperCase();
+      if (prefill.mobile && $("trackMobile")) $("trackMobile").value = String(prefill.mobile).replace(/\D/g, "").slice(-10);
       setTimeout(() => $("trackOrderId")?.focus(), 50);
     };
     $("trackOrderButton")?.addEventListener("click", openTrackOrder);
@@ -1780,7 +1787,8 @@
     const saveCloud = async () => {
       data.mobileHash = await hashTrackingMobile(data.customer.number);
       const ref = await db.collection("orders").add(data);
-      await syncPublicTracking(data);
+      // Tracking sync must never delay or block the final order confirmation.
+      try { await syncPublicTracking(data); } catch (trackingError) { console.warn("Tracking sync deferred:", trackingError); }
       return ref;
     };
 
@@ -1822,9 +1830,13 @@
       const targetNumber = data.salesmanNumber ? String(data.salesmanNumber).replace(/\D/g, "") : WHATSAPP_NUMBER;
       const normalizedTarget = targetNumber.length === 10 ? "91" + targetNumber : targetNumber;
       const waUrl = `https://wa.me/${normalizedTarget}?text=${encodeURIComponent(message)}`;
-      try { window.open(waUrl, "_blank"); } catch {}
+      // Open WhatsApp first, then show the website confirmation so the customer sees
+      // the confirmation after the WhatsApp hand-off. A WhatsApp web/app hand-off
+      // cannot report delivery status back to the website, so this is intentionally
+      // a short UI hand-off rather than pretending WhatsApp confirmed delivery.
+      try { window.open(waUrl, "_blank", "noopener,noreferrer"); } catch {}
 
-      showOrderSuccess(data.customer.number, clientId);
+      setTimeout(() => showOrderSuccess(data.customer.number, clientId), 500);
 
       cart = {};
       updateCart();
@@ -1865,13 +1877,9 @@
       track.onclick = (e) => {
         e.preventDefault();
         modal.classList.add("hidden");
-        const trackModal = $("trackOrderModal");
-        if (trackModal) {
-          trackModal.classList.remove("hidden");
-          trackModal.setAttribute("aria-hidden", "false");
-          if ($("trackOrderId")) $("trackOrderId").value = orderId;
-          if ($("trackMobile")) $("trackMobile").value = String(customerNumber || '').replace(/\D/g,'').slice(-10);
-          setTimeout(() => $("trackOrderForm")?.requestSubmit(), 50);
+        if (typeof window.openCocoBizTrackOrder === "function") {
+          window.openCocoBizTrackOrder({ orderId, mobile: customerNumber });
+          setTimeout(() => $("trackOrderForm")?.requestSubmit(), 100);
         }
       };
     }
