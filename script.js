@@ -33,6 +33,12 @@
   let knownOrderIds = new Set();
   let notificationPrimed = false;
   let orderPollTimer = null;
+  let storeSettings = { deliveryCharge: 0, freeDeliveryAbove: 0, platformFeeType: "flat", platformFeeValue: 0, onlinePaymentEnabled: false, razorpayKeyId: "" };
+  const ORDER_STATUSES = [
+    ["pending", "Order Placed"], ["accepted", "Confirmed"], ["packed", "Packed"],
+    ["shipped", "Shipped"], ["out_for_delivery", "Out for Delivery"], ["delivered", "Delivered"],
+    ["cancelled", "Cancelled"], ["returned", "Returned"]
+  ];
 
   const money = value =>
     `₹${Number(value || 0).toLocaleString("en-IN", {
@@ -547,6 +553,11 @@
     $("salesmenTab")?.addEventListener("click", () => showAdminPanel("salesmen"));
     $("offersTab")?.addEventListener("click", () => showAdminPanel("offers"));
     $("offerForm")?.addEventListener("submit", saveOffer);
+    $("settingsTab")?.addEventListener("click", () => showAdminPanel("settings"));
+    $("storeSettingsForm")?.addEventListener("submit", saveStoreSettings);
+    $("trackOrderButton")?.addEventListener("click", () => $("trackOrderModal")?.classList.remove("hidden"));
+    $("trackOrderForm")?.addEventListener("submit", trackOrder);
+    $("customerPaymentMethod")?.addEventListener("change", renderOrderCharges);
     $("deleteOfferButton")?.addEventListener("click", deleteOffer);
     $("offerAdminPreview")?.addEventListener("click", event => {
       const button = event.target.closest("[data-delete-offer]");
@@ -598,6 +609,8 @@
       const deleteButton = event.target.closest("[data-delete-order]");
       if (returnButton) processReturn(returnButton.dataset.returnOrder);
       if (billButton) printOrderBill(billButton.dataset.billOrder);
+      const statusSelect = event.target.closest("[data-status-order]");
+      if (statusSelect) updateOrderStatusDirect(statusSelect.dataset.statusOrder, statusSelect.value);
       if (acceptButton) updateOrderStatus(acceptButton.dataset.acceptOrder);
       if (paymentButton) receivePayment(paymentButton.dataset.paymentOrder);
       if (undoPaymentButton) undoLastPayment(undoPaymentButton.dataset.undoPaymentOrder);
@@ -1338,6 +1351,94 @@
     }
   }
 
+  function calculateOrderCharges(subtotal) {
+    const freeAbove = Number(storeSettings.freeDeliveryAbove || 0);
+    const delivery = freeAbove > 0 && subtotal >= freeAbove ? 0 : Number(storeSettings.deliveryCharge || 0);
+    const feeBase = Number(storeSettings.platformFeeValue || 0);
+    const platformFee = storeSettings.platformFeeType === "percent" ? subtotal * feeBase / 100 : feeBase;
+    return { subtotal, delivery, platformFee, grandTotal: subtotal + delivery + platformFee };
+  }
+
+  function renderOrderCharges() {
+    const box = $("orderCharges"); if (!box) return;
+    const subtotal = cartItems().reduce((sum, item) => sum + item.total, 0);
+    const c = calculateOrderCharges(subtotal);
+    box.innerHTML = `<div class="charge-row"><span>Items subtotal</span><b>${money(c.subtotal)}</b></div>
+      <div class="charge-row"><span>Delivery</span><b>${c.delivery ? money(c.delivery) : "FREE"}</b></div>
+      <div class="charge-row"><span>Platform fee</span><b>${money(c.platformFee)}</b></div>
+      <div class="charge-row total"><span>Total payable</span><b>${money(c.grandTotal)}</b></div>`;
+    const pm = $("customerPaymentMethod");
+    if (pm) { pm.disabled = !storeSettings.onlinePaymentEnabled; if (!storeSettings.onlinePaymentEnabled && pm.value === "ONLINE") pm.value = "COD"; }
+  }
+
+  async function loadStoreSettings() {
+    try {
+      const snap = await db.collection("settings").doc("store").get();
+      if (snap.exists) storeSettings = { ...storeSettings, ...snap.data() };
+    } catch (e) { console.warn("Store settings load failed", e); }
+  }
+
+  async function saveStoreSettings(event) {
+    event.preventDefault();
+    if (currentRole !== "admin") return;
+    storeSettings = {
+      deliveryCharge: Math.max(0, Number($("deliveryCharge").value || 0)),
+      freeDeliveryAbove: Math.max(0, Number($("freeDeliveryAbove").value || 0)),
+      platformFeeType: $("platformFeeType").value,
+      platformFeeValue: Math.max(0, Number($("platformFeeValue").value || 0)),
+      onlinePaymentEnabled: $("onlinePaymentEnabled").checked,
+      razorpayKeyId: $("razorpayKeyId").value.trim(),
+      updatedAt: Date.now()
+    };
+    try { await db.collection("settings").doc("store").set(storeSettings, { merge: true }); renderOrderCharges(); alert("Store settings save ho gayi."); }
+    catch (e) { alert(`Settings save nahi hui: ${errorText(e)}`); }
+  }
+
+  function renderStoreSettings() {
+    if ($("deliveryCharge")) $("deliveryCharge").value = storeSettings.deliveryCharge || 0;
+    if ($("freeDeliveryAbove")) $("freeDeliveryAbove").value = storeSettings.freeDeliveryAbove || "";
+    if ($("platformFeeType")) $("platformFeeType").value = storeSettings.platformFeeType || "flat";
+    if ($("platformFeeValue")) $("platformFeeValue").value = storeSettings.platformFeeValue || 0;
+    if ($("onlinePaymentEnabled")) $("onlinePaymentEnabled").checked = !!storeSettings.onlinePaymentEnabled;
+    if ($("razorpayKeyId")) $("razorpayKeyId").value = storeSettings.razorpayKeyId || "";
+  }
+
+  function statusLabel(status) { return ORDER_STATUSES.find(x => x[0] === status)?.[1] || status || "Order Placed"; }
+  function statusTimeline(order) {
+    const current = order.status || "pending";
+    const idx = ORDER_STATUSES.findIndex(x => x[0] === current);
+    const visible = ORDER_STATUSES.filter(x => !["cancelled","returned"].includes(x[0]));
+    return `<div class="status-timeline">${visible.map((x,i)=>{ const done = idx >= ORDER_STATUSES.findIndex(y=>y[0]===x[0]); return `<div class="timeline-step ${done?"done":""}"><span>${done?"✓":i+1}</span><small>${x[1]}</small></div>`; }).join("")}</div>${["cancelled","returned"].includes(current)?`<div class="exception-status">${current === "cancelled" ? "❌ Order Cancelled" : "↩ Order Returned"}</div>`:""}`;
+  }
+
+  async function trackOrder(event) {
+    event.preventDefault();
+    const id = $("trackOrderId").value.trim(); const mobile = $("trackMobile").value.trim();
+    const box = $("trackOrderResult");
+    box.innerHTML = "Searching...";
+    try {
+      const snap = await db.collection("orders").where("clientId", "==", id).limit(1).get();
+      if (snap.empty) { box.innerHTML = `<p class="modal-subtitle">Order nahi mila. Order ID check karein.</p>`; return; }
+      const order = { id: snap.docs[0].id, ...snap.docs[0].data() };
+      if (String(order.customer?.number || "") !== mobile) { box.innerHTML = `<p class="modal-subtitle">Order ID aur mobile number match nahi hua.</p>`; return; }
+      box.innerHTML = `<div class="tracking-card"><div class="order-heading-row"><strong>#${escapeHtml(order.clientId || order.id)}</strong><span class="status-badge">${escapeHtml(statusLabel(order.status))}</span></div>${statusTimeline(order)}<div class="order-grand-total">Total: <strong>${money(order.netTotal ?? order.total ?? 0)}</strong><br><small>Last updated: ${new Date(order.updatedAt || order.createdAt || Date.now()).toLocaleString("en-IN")}</small></div></div>`;
+    } catch(e) { box.innerHTML = `<p class="modal-subtitle">Tracking failed: ${escapeHtml(errorText(e))}</p>`; }
+  }
+
+  async function openOnlinePayment(orderData, amount) {
+    if (!storeSettings.onlinePaymentEnabled || !storeSettings.razorpayKeyId) throw new Error("Online payment abhi configure nahi hai. Admin Store Settings me Razorpay Key ID set karein.");
+    await loadScript("https://checkout.razorpay.com/v1/checkout.js");
+    const createPaymentOrder = firebase.functions().httpsCallable("createRazorpayOrder");
+    const result = await createPaymentOrder({ amount: Math.round(amount * 100), currency: "INR", receipt: orderData.clientId });
+    const rzpOrder = result.data;
+    return new Promise((resolve, reject) => {
+      const options = { key: storeSettings.razorpayKeyId, amount: rzpOrder.amount, currency: "INR", name: "CocoBiz", description: `Order ${orderData.clientId}`, order_id: rzpOrder.id, prefill: { name: orderData.customer.name, contact: orderData.customer.number }, handler: async response => {
+        try { const verify = firebase.functions().httpsCallable("verifyRazorpayPayment"); await verify({ orderId: rzpOrder.id, paymentId: response.razorpay_payment_id, signature: response.razorpay_signature, clientId: orderData.clientId }); resolve(response); } catch(e) { reject(e); }
+      }, modal: { ondismiss: () => reject(new Error("Payment cancelled.")) } };
+      const rzp = new Razorpay(options); rzp.open();
+    });
+  }
+
   async function submitOrder(event) {
     event.preventDefault();
     if (window.__cocoOrderWorking) return;
@@ -1349,7 +1450,9 @@
       return;
     }
 
-    const total = items.reduce((sum, item) => sum + item.total, 0);
+    const subtotal = items.reduce((sum, item) => sum + item.total, 0);
+    const charges = calculateOrderCharges(subtotal);
+    const total = charges.grandTotal;
     const clientId = `CB-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
     const data = {
@@ -1366,13 +1469,17 @@
       },
       items,
       returns: [],
+      subtotal: charges.subtotal,
+      deliveryCharge: charges.delivery,
+      platformFee: charges.platformFee,
       total,
       originalTotal: total,
       returnedTotal: 0,
       netTotal: total,
       paidAmount: 0,
       dueAmount: total,
-      paymentMethod: "WhatsApp",
+      paymentMethod: $("customerPaymentMethod")?.value || "COD",
+      paymentStatus: "pending",
       paymentHistory: [],
       salesmanId: publicSalesmanId || null,
       salesmanName: publicSalesmanProfile?.name || null,
@@ -1388,6 +1495,16 @@
       // Try immediately; if the network is temporarily unavailable,
       // Firestore offline persistence will queue the write and sync later.
       await saveCloud();
+      if (data.paymentMethod === "ONLINE") {
+        try {
+          const payment = await openOnlinePayment(data, total);
+          data.paymentStatus = "paid"; data.paidAmount = total; data.dueAmount = 0; data.paymentId = payment.razorpay_payment_id; data.status = "accepted"; data.updatedAt = Date.now();
+          const ref = (await db.collection("orders").where("clientId", "==", clientId).limit(1).get()).docs[0];
+          if (ref) await ref.ref.update({ paymentStatus: "paid", paidAmount: total, dueAmount: 0, paymentId: data.paymentId, status: "accepted", acceptedAt: Date.now(), updatedAt: Date.now() });
+        } catch (paymentError) {
+          alert(`Online payment complete nahi hua: ${errorText(paymentError)}\n\nOrder ko COD/pending ke roop me rakha gaya hai.`);
+        }
+      }
 
       localStorage.removeItem("cocobiz_pending_order_" + clientId);
 
@@ -1397,7 +1514,7 @@
         "",
         ...items.map(item => `${item.name} × ${item.quantity} = ${money(item.total)}`),
         "",
-        `Total: ${money(total)}`,
+        `Subtotal: ${money(charges.subtotal)}`, `Delivery: ${charges.delivery ? money(charges.delivery) : "FREE"}`, `Platform fee: ${money(charges.platformFee)}`, `Total: ${money(total)}`, `Payment: ${data.paymentMethod}`,
         `Name: ${data.customer.name}`,
         `Mobile: ${data.customer.number}`,
         `Address: ${data.customer.address}`,
@@ -1486,9 +1603,10 @@
                 <strong>Order #${escapeHtml(order.id)}</strong>
                 <small>${escapeHtml(order.date || "")}</small>
               </div>
-              <span class="status-badge">${escapeHtml(order.status || "pending")}</span>
+              <div class="status-control-wrap"><span class="status-badge">${escapeHtml(statusLabel(order.status || "pending"))}</span>${currentRole === "admin" ? `<select class="status-select" data-status-order="${escapeHtml(order.id)}">${ORDER_STATUSES.map(st=>`<option value="${st[0]}" ${st[0]===(order.status||"pending")?"selected":""}>${st[1]}</option>`).join("")}</select>` : ""}</div>
             </div>
 
+            ${statusTimeline(order)}
             <p>
               ${order.salesmanName ? `<span class="salesman-tag">👤 ${escapeHtml(order.salesmanName)}</span><br>` : ""}
               <b>${escapeHtml(order.customer?.name || "Customer")}</b><br>
@@ -1551,6 +1669,15 @@
         tx.update(ref, {stock: next, updatedAt: Date.now()});
       });
     }
+  }
+
+  async function updateOrderStatusDirect(orderId, status) {
+    const order = orders.find(o => o.id === orderId); if (!order || currentRole !== "admin") return;
+    try {
+      if (status === "accepted" && !["accepted","received","packed","shipped","out_for_delivery","delivered"].includes(order.status)) await adjustStockForOrder(order, -1);
+      await db.collection("orders").doc(orderId).update({ status, updatedAt: Date.now(), ...(status === "accepted" ? { acceptedAt: Date.now() } : {}), ...(status === "delivered" ? { deliveredAt: Date.now() } : {}) });
+      await loadOrders(); renderOrders(); renderSalesDashboard();
+    } catch(e) { alert(`Status update nahi hua: ${errorText(e)}`); }
   }
 
   async function updateOrderStatus(orderId) {
@@ -1707,7 +1834,7 @@
     const box = $("acceptedOrderFolders");
     if (!box) return;
 
-    const accepted = orders.filter(order => ["accepted", "received"].includes(order.status));
+    const accepted = orders.filter(order => !["pending","salesman_pending","pending_admin","cancelled","returned"].includes(order.status));
     const groups = new Map();
 
     accepted.forEach(order => {
@@ -1754,7 +1881,7 @@
 
   function openCustomerAccount(key) {
     const accepted = orders.filter(order =>
-      ["accepted", "received"].includes(order.status) && customerKey(order) === key
+      !["pending","salesman_pending","pending_admin","cancelled","returned"].includes(order.status) && customerKey(order) === key
     );
     if (!accepted.length) return;
 
@@ -2052,7 +2179,7 @@
   }
 
   function acceptedOrdersForReports() {
-    const accepted = orders.filter(order => ["accepted", "received"].includes(order.status));
+    const accepted = orders.filter(order => !["pending","salesman_pending","pending_admin","cancelled","returned"].includes(order.status));
     if (reportPeriod === "all") return accepted;
     const now = new Date();
     const start = new Date(now);
@@ -2219,7 +2346,8 @@
 
   async function loadInitialData() {
     await loadPublicSalesmanProfile();
-    await Promise.all([loadProducts(), loadOrders(), loadOffer()]);
+    await Promise.all([loadProducts(), loadOrders(), loadOffer(), loadStoreSettings()]);
+    renderStoreSettings();
     renderProducts();
     renderCustomerOffer();
     updateCart();

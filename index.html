@@ -17,6 +17,7 @@
       <span>Coco<em>Biz</em></span>
     </a>
     <div class="header-actions">
+      <button class="secondary-button track-header-button" id="trackOrderButton">Track Order</button>
       <button class="order-button" id="openOrderButton">Order <span id="cartCount">0</span></button>
       <button class="admin-button hidden" id="adminButton" aria-hidden="true" tabindex="-1">Admin Panel</button>
     </div>
@@ -93,6 +94,7 @@
         <button class="admin-tab" id="ordersTab">Orders <span id="orderCount">0</span></button>
         <button class="admin-tab admin-only-tab" id="salesmenTab">Salesmen</button>
         <button class="admin-tab admin-only-tab" id="offersTab">Offers</button>
+        <button class="admin-tab admin-only-tab" id="settingsTab">Store Settings</button>
       </div>
 
       <div id="dashboardPanel">
@@ -259,6 +261,20 @@
         <div class="admin-products" id="adminProducts"></div>
       </div>
 
+      <div id="settingsPanel" class="hidden">
+        <p class="modal-subtitle">Online store charges aur payment settings yahan manage karein.</p>
+        <form id="storeSettingsForm" class="product-form">
+          <div class="form-group"><label for="deliveryCharge">Delivery charge (₹)</label><input id="deliveryCharge" type="number" min="0" step="0.01" value="0"></div>
+          <div class="form-group"><label for="freeDeliveryAbove">Free delivery above (₹) <small>(optional)</small></label><input id="freeDeliveryAbove" type="number" min="0" step="0.01" placeholder="e.g. 999"></div>
+          <div class="form-group"><label for="platformFeeType">Platform fee</label><select id="platformFeeType"><option value="flat">Flat ₹</option><option value="percent">Percentage %</option></select></div>
+          <div class="form-group"><label for="platformFeeValue">Platform fee value</label><input id="platformFeeValue" type="number" min="0" step="0.01" value="0"></div>
+          <div class="form-group full-width"><label><input id="onlinePaymentEnabled" type="checkbox"> Enable online payment (Razorpay)</label></div>
+          <div class="form-group full-width"><label for="razorpayKeyId">Razorpay Key ID <small>(public key only)</small></label><input id="razorpayKeyId" type="text" placeholder="rzp_test_... or rzp_live_..."></div>
+          <div class="form-actions full-width"><button class="primary-button" type="submit">Save Store Settings</button></div>
+        </form>
+        <div class="settings-note">🔐 Razorpay Secret Key website me kabhi mat daalna. Woh Firebase Cloud Functions me secure secret ke roop me set hoga.</div>
+      </div>
+
       <div id="offersPanel" class="hidden">
         <p class="modal-subtitle">Offer poster ko schedule karein. Start hote hi customer ko popup dikhega aur end hote hi automatically hide hokar next scheduled offer show ho jayega.</p>
         <form id="offerForm" class="product-form">
@@ -337,6 +353,16 @@
           <textarea id="customerAddress" rows="3" required></textarea>
         </div>
 
+        <div id="orderCharges" class="order-charges"></div>
+
+        <div class="form-group">
+          <label for="customerPaymentMethod">Payment method</label>
+          <select id="customerPaymentMethod" required>
+            <option value="COD">Cash on Delivery</option>
+            <option value="ONLINE">Online Payment</option>
+          </select>
+        </div>
+
         <div class="form-group">
           <label for="customerType">You are a</label>
           <select id="customerType" required>
@@ -346,9 +372,8 @@
           </select>
         </div>
 
-        <button class="primary-button whatsapp-button" type="submit">
-          Send Order on WhatsApp
-        </button>
+        <button class="primary-button whatsapp-button" type="submit">Place Order</button>
+        <p class="modal-subtitle">Order place karne ke baad aapko order tracking ID milegi.</p>
       </form>
     </div>
   </div>
@@ -368,6 +393,20 @@
   </div>
 
 
+
+  <div class="modal hidden" id="trackOrderModal">
+    <div class="modal-box admin-box">
+      <button class="close-button" data-close="trackOrderModal">×</button>
+      <p class="eyebrow">CocoBiz tracking</p>
+      <h2>Track Your Order</h2>
+      <form id="trackOrderForm" class="product-form">
+        <div class="form-group"><label for="trackOrderId">Order ID</label><input id="trackOrderId" placeholder="CB-..." required></div>
+        <div class="form-group"><label for="trackMobile">Mobile number</label><input id="trackMobile" type="tel" pattern="[0-9]{10}" maxlength="10" required></div>
+        <div class="form-actions full-width"><button class="primary-button" type="submit">Track Order</button></div>
+      </form>
+      <div id="trackOrderResult"></div>
+    </div>
+  </div>
 
   <div class="modal hidden" id="customerAccountModal">
     <div class="modal-box admin-box customer-account-modal">

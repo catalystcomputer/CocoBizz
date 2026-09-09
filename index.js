@@ -1,4 +1,6 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const crypto = require('crypto');
+const Razorpay = require('razorpay');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
@@ -42,4 +44,29 @@ exports.cleanupExpiredOffers = onSchedule({ schedule: 'every 15 minutes', timeZo
   snap.docs.forEach(doc => batch.delete(doc.ref));
   await batch.commit();
   return null;
+});
+
+
+exports.createRazorpayOrder = onCall(async (request) => {
+  const { amount, currency = 'INR', receipt } = request.data || {};
+  if (!Number.isInteger(amount) || amount < 100 || !receipt) throw new HttpsError('invalid-argument', 'Valid amount and receipt required.');
+  const key_id = process.env.RAZORPAY_KEY_ID;
+  const key_secret = process.env.RAZORPAY_KEY_SECRET;
+  if (!key_id || !key_secret) throw new HttpsError('failed-precondition', 'Razorpay server keys are not configured.');
+  const razorpay = new Razorpay({ key_id, key_secret });
+  try { return await razorpay.orders.create({ amount, currency, receipt, payment_capture: 1 }); }
+  catch (e) { throw new HttpsError('internal', e.message || 'Razorpay order creation failed.'); }
+});
+
+exports.verifyRazorpayPayment = onCall(async (request) => {
+  const { orderId, paymentId, signature, clientId } = request.data || {};
+  if (!orderId || !paymentId || !signature || !clientId) throw new HttpsError('invalid-argument', 'Payment verification data missing.');
+  const secret = process.env.RAZORPAY_KEY_SECRET;
+  if (!secret) throw new HttpsError('failed-precondition', 'Razorpay server secret is not configured.');
+  const expected = crypto.createHmac('sha256', secret).update(`${orderId}|${paymentId}`).digest('hex');
+  if (expected !== signature) throw new HttpsError('permission-denied', 'Invalid payment signature.');
+  const db = getFirestore();
+  const snap = await db.collection('orders').where('clientId', '==', clientId).limit(1).get();
+  if (!snap.empty) await snap.docs[0].ref.update({ paymentStatus: 'paid', paymentId, updatedAt: Date.now() });
+  return { verified: true };
 });
