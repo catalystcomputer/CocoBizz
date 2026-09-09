@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="CocoBiz chocolate products and ordering">
-  <title>CocoBiz | Chocolate Collection</title>
+  <meta name="description" content="CocoBiz online store for gifts, chocolates and kitchen products">
+  <title>CocoBiz | Gifts, Chocolates & Kitchen Store</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
@@ -25,14 +25,23 @@
   <main>
     <section class="catalogue-header">
       <p class="eyebrow">Welcome to CocoBiz</p>
-      <h1>Our Chocolate <em>Collection</em></h1>
-      <p>Choose products and place your order directly on WhatsApp.</p>
+      <h1>Gifts, Chocolates & <em>Kitchen Store</em></h1>
+      <p>Discover useful kitchen products, beautiful gifts and chocolate hampers. Order online easily.</p>
     </section>
 
     <section class="product-search-section">
       <div class="product-search">
         <span>⌕</span>
         <input id="productSearch" type="search" placeholder="Search product..." autocomplete="off">
+      </div>
+    </section>
+
+    <section class="category-filter-section">
+      <div class="category-filters" role="group" aria-label="Product categories">
+        <button type="button" class="category-filter active" data-category="all">All</button>
+        <button type="button" class="category-filter" data-category="gift">🎁 Gifts</button>
+        <button type="button" class="category-filter" data-category="chocolate">🍫 Chocolates</button>
+        <button type="button" class="category-filter" data-category="kitchen">🍳 Kitchen</button>
       </div>
     </section>
 
@@ -228,6 +237,15 @@
           </div>
 
           <div class="form-group full-width">
+            <label for="productCategory">Category</label>
+            <select id="productCategory" required>
+              <option value="gift">🎁 Gift items</option>
+              <option value="chocolate">🍫 Chocolate</option>
+              <option value="kitchen">🍳 Kitchen products</option>
+            </select>
+          </div>
+
+          <div class="form-group full-width">
             <label for="productImage">Product photo</label>
             <input id="productImage" type="file" accept="image/*">
           </div>
@@ -364,12 +382,12 @@
         <span class="logo-mark">✦</span>
         <span>Coco<em>Biz</em></span>
       </span>
-      <span class="footer-tagline">Quality chocolates for every occasion.</span>
+      <span class="footer-tagline">Gifts, chocolates & useful kitchen products for every occasion.</span>
     </div>
 
     <div class="contact-details">
       <a href="tel:7463928290">📞 7463928290</a>
-      <a href="mailto:kunalkrverma5555@gmail.com">✉ kunalkrverma5555@gmail.com</a>
+      <a href="mailto:help.cocobiz@yahoo.com">✉ help.cocobiz@yahoo.com</a>
     </div>
 
     <span class="copyright">© <span id="year"></span> CocoBiz</span>

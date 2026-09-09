@@ -19,6 +19,7 @@
   let orders = [];
   let cart = {};
   let searchTerm = "";
+  let activeCategory = "all";
   let selfSaleItems = [];
   let currentRole = "admin";
   let currentProfile = null;
@@ -365,7 +366,10 @@
 
     const visibleProducts = products.filter(product => {
       const haystack = `${product.name || ""} ${product.description || ""}`.toLowerCase();
-      return !searchTerm || haystack.includes(searchTerm);
+      const category = String(product.category || "gift").toLowerCase();
+      const matchesSearch = !searchTerm || haystack.includes(searchTerm);
+      const matchesCategory = activeCategory === "all" || category === activeCategory;
+      return matchesSearch && matchesCategory;
     });
 
     $("emptyMessage")?.classList.toggle("hidden", visibleProducts.length > 0);
@@ -377,6 +381,7 @@
              alt="${escapeHtml(product.name)}">
 
         <div class="product-content">
+          <div class="product-category-badge">${product.category === "chocolate" ? "🍫 Chocolate" : product.category === "kitchen" ? "🍳 Kitchen" : "🎁 Gift"}</div>
           <h3>${escapeHtml(product.name)}</h3>
           <p>${escapeHtml(product.description)}</p>
 
@@ -510,6 +515,14 @@
     $("productSearch")?.addEventListener("input", event => {
       searchTerm = event.target.value.trim().toLowerCase();
       renderProducts();
+    });
+
+    document.querySelectorAll(".category-filter").forEach(button => {
+      button.addEventListener("click", () => {
+        activeCategory = button.dataset.category || "all";
+        document.querySelectorAll(".category-filter").forEach(b => b.classList.toggle("active", b === button));
+        renderProducts();
+      });
     });
 
     $("adminButton")?.addEventListener("click", openAdminFromLogo);
@@ -1017,6 +1030,7 @@
 
     const name = $("productName").value.trim();
     const description = $("productDescription").value.trim();
+    const category = $("productCategory")?.value || oldProduct?.category || "gift";
     const actualPrice = Number($("actualPrice").value);
     const salePrice = Number($("salePrice").value);
     const costRaw = $("costPrice")?.value.trim();
@@ -1058,6 +1072,7 @@
       const data = {
         name,
         description,
+        category,
         actualPrice,
         salePrice,
         costPrice,
@@ -1101,6 +1116,7 @@
     $("productId").value = id;
     $("productName").value = product.name || "";
     $("productDescription").value = product.description || "";
+    if ($("productCategory")) $("productCategory").value = product.category || "gift";
     $("actualPrice").value = product.actualPrice ?? "";
     $("salePrice").value = product.salePrice ?? "";
     if ($("costPrice")) $("costPrice").value = product.costPrice ?? "";
