@@ -19,6 +19,7 @@
   let orders = [];
   let cart = {};
   let searchTerm = "";
+  let activeCategory = "all";
   let selfSaleItems = [];
   let currentRole = "admin";
   let currentProfile = null;
@@ -32,10 +33,14 @@
   let knownOrderIds = new Set();
   let notificationPrimed = false;
   let orderPollTimer = null;
-  let storeSettings = { upiId: "", qrImage: "", storeLat: null, storeLng: null };
-  let coupons = [];
+  let storeSettings = { deliveryCharge: 0, freeDeliveryAbove: 0, platformFeeEnabled: false, platformFeeType: "flat", platformFeeValue: 0, upiEnabled: true, upiId: "kunalverma5555@ibl", upiName: "CocoBiz", upiQrImage: "", onlinePaymentEnabled: false, razorpayKeyId: "", deliveryRadiusKm: 25, deliveryMinDays: 7, deliveryMaxDays: 15, storeLatitude: null, storeLongitude: null };
   let appliedCoupon = null;
-  let pendingCheckoutData = null;
+  let customerLocation = null;
+  const ORDER_STATUSES = [
+    ["pending", "Order Placed"], ["accepted", "Confirmed"], ["packed", "Packed"],
+    ["shipped", "Shipped"], ["out_for_delivery", "Out for Delivery"], ["delivered", "Delivered"],
+    ["cancelled", "Cancelled"], ["returned", "Returned"]
+  ];
 
   const money = value =>
     `₹${Number(value || 0).toLocaleString("en-IN", {
@@ -369,7 +374,10 @@
 
     const visibleProducts = products.filter(product => {
       const haystack = `${product.name || ""} ${product.description || ""}`.toLowerCase();
-      return !searchTerm || haystack.includes(searchTerm);
+      const category = String(product.category || "gift").toLowerCase();
+      const matchesSearch = !searchTerm || haystack.includes(searchTerm);
+      const matchesCategory = activeCategory === "all" || category === activeCategory;
+      return matchesSearch && matchesCategory;
     });
 
     $("emptyMessage")?.classList.toggle("hidden", visibleProducts.length > 0);
@@ -381,6 +389,7 @@
              alt="${escapeHtml(product.name)}">
 
         <div class="product-content">
+          <div class="product-category-badge">${product.category === "chocolate" ? "🍫 Chocolate" : product.category === "kitchen" ? "🍳 Kitchen" : "🎁 Gift"}</div>
           <h3>${escapeHtml(product.name)}</h3>
           <p>${escapeHtml(product.description)}</p>
 
@@ -499,214 +508,15 @@
   }
 
   function openOrderModal() {
+    appliedCoupon = null; customerLocation = null;
     if (!Object.keys(cart).length) {
       alert("पहले कोई product select करें।");
       return;
     }
 
-    appliedCoupon = null;
-    pendingCheckoutData = null;
-    if ($("couponInput")) $("couponInput").value = "";
-    if ($("couponMessage")) $("couponMessage").textContent = "";
-    showCheckoutStep(1);
     renderSelectedProducts();
+    setCheckoutStep(1);
     $("orderModal")?.classList.remove("hidden");
-  }
-
-
-  async function loadStoreSettings() {
-    if (!db) return;
-    try {
-      const snap = await db.collection("settings").doc("store").get();
-      storeSettings = snap.exists ? { ...storeSettings, ...snap.data() } : storeSettings;
-      renderStoreSettings();
-    } catch (e) { console.warn("Store settings load failed", e); }
-  }
-
-  function renderStoreSettings() {
-    if ($("storeUpiId")) $("storeUpiId").value = storeSettings.upiId || "";
-    if ($("storeLat")) $("storeLat").value = storeSettings.storeLat ?? "";
-    if ($("storeLng")) $("storeLng").value = storeSettings.storeLng ?? "";
-  }
-
-  async function saveStoreSettings(event) {
-    event.preventDefault();
-    if (currentRole !== "admin") return;
-    try {
-      let qrImage = storeSettings.qrImage || "";
-      const file = $("storeQrImage")?.files?.[0];
-      if (file) qrImage = await compressImage(file, 900, 0.72);
-      const upiId = $("storeUpiId")?.value.trim() || "";
-      const storeLat = $("storeLat")?.value === "" ? null : Number($("storeLat").value);
-      const storeLng = $("storeLng")?.value === "" ? null : Number($("storeLng").value);
-      if (storeLat != null && (!Number.isFinite(storeLat) || storeLat < -90 || storeLat > 90)) throw new Error("Latitude सही भरें।");
-      if (storeLng != null && (!Number.isFinite(storeLng) || storeLng < -180 || storeLng > 180)) throw new Error("Longitude सही भरें।");
-      storeSettings = { upiId, qrImage, storeLat, storeLng, updatedAt: Date.now(), updatedBy: auth.currentUser.uid };
-      await db.collection("settings").doc("store").set(cleanFirestoreValue(storeSettings), { merge: true });
-      renderStoreSettings();
-      alert("Settings save ho gayi.");
-    } catch (e) { alert(`Settings save nahi hui: ${errorText(e)}`); }
-  }
-
-  function useStoreLocation() {
-    if (!navigator.geolocation) { alert("Is browser me location supported nahi hai."); return; }
-    navigator.geolocation.getCurrentPosition(pos => {
-      $("storeLat").value = pos.coords.latitude.toFixed(7);
-      $("storeLng").value = pos.coords.longitude.toFixed(7);
-      alert("Store location fill ho gayi. Ab Save Settings dabayein.");
-    }, err => alert("Location nahi mil saki. Browser me location permission allow karein."), { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
-  }
-
-  async function loadCoupons() {
-    if (!db) return;
-    try {
-      const snap = await db.collection("coupons").get();
-      coupons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderCouponsAdmin();
-    } catch (e) { console.warn("Coupons load failed", e); coupons = []; }
-  }
-
-  function couponStatus(c, now = Date.now()) {
-    if (c.active === false) return "inactive";
-    const from = Number(c.validFrom || 0), until = Number(c.validUntil || 0), uses = Number(c.usedCount || 0), max = Number(c.maxUses || 0);
-    if (from && now < from) return "scheduled";
-    if (until && now >= until) return "expired";
-    if (max > 0 && uses >= max) return "used-up";
-    return "active";
-  }
-
-  function renderCouponsAdmin() {
-    const box = $("couponList"); if (!box) return;
-    const sorted = [...coupons].sort((a,b) => Number(b.createdAt||0) - Number(a.createdAt||0));
-    box.innerHTML = sorted.length ? sorted.map(c => {
-      const st = couponStatus(c), label = st === "active" ? "LIVE" : st === "scheduled" ? "SCHEDULED" : st === "expired" ? "EXPIRED" : st === "used-up" ? "USED UP" : "INACTIVE";
-      const discount = c.discountType === "percent" ? `${Number(c.discountValue||0)}% OFF` : `${money(c.discountValue)} OFF`;
-      return `<div class="admin-product coupon-admin-card"><div><strong>${escapeHtml(c.code)}</strong><small><br>${discount} · Min ${money(c.minOrder||0)} · Uses ${Number(c.usedCount||0)}/${Number(c.maxUses||0) > 0 ? Number(c.maxUses) : "∞"}<br>${formatOfferDate(c.validFrom)} → ${formatOfferDate(c.validUntil)}</small></div><span class="offer-status">${label}</span><button class="delete-button" data-delete-coupon="${escapeHtml(c.id)}">🗑 Delete</button></div>`;
-    }).join("") : `<p class="modal-subtitle">No coupons generated yet.</p>`;
-  }
-
-  async function generateCoupon(event) {
-    event.preventDefault();
-    if (currentRole !== "admin") return;
-    const code = $("couponCode").value.trim().toUpperCase().replace(/\s+/g, "");
-    const type = $("couponType").value;
-    const value = Number($("couponValue").value);
-    const minOrder = Number($("couponMinOrder").value || 0);
-    const maxUses = Number($("couponMaxUses").value || 0);
-    const validFrom = new Date($("couponStart").value).getTime();
-    const validUntil = new Date($("couponEnd").value).getTime();
-    if (!/^[A-Z0-9_-]{3,30}$/.test(code)) { alert("Coupon code 3-30 characters ka rakhein."); return; }
-    if (!Number.isFinite(value) || value <= 0 || !Number.isFinite(minOrder) || minOrder < 0 || !Number.isInteger(maxUses) || maxUses < 0) { alert("Coupon values sahi bharein."); return; }
-    if (type === "percent" && value > 100) { alert("Percentage 100 se zyada nahi ho sakta."); return; }
-    if (type === "fixed" && value > 1000000) { alert("Fixed discount bahut bada hai."); return; }
-    if (!Number.isFinite(validFrom) || !Number.isFinite(validUntil) || validUntil <= validFrom) { alert("Valid from/until sahi bharein."); return; }
-    if (coupons.some(c => String(c.code||"").toUpperCase() === code && couponStatus(c) !== "expired")) { alert("Ye coupon code already exist karta hai."); return; }
-    try {
-      await db.collection("coupons").add({ code, discountType: type, discountValue: value, minOrder, maxUses, usedCount: 0, validFrom, validUntil, active: true, createdAt: Date.now(), createdBy: auth.currentUser.uid });
-      $("couponForm").reset(); await loadCoupons(); alert(`Coupon ${code} generate ho gaya.`);
-    } catch (e) { alert(`Coupon generate nahi hua: ${errorText(e)}`); }
-  }
-
-  async function deleteCoupon(id) {
-    if (currentRole !== "admin" || !id) return;
-    if (!confirm("Is coupon ko delete karna hai?")) return;
-    try { await db.collection("coupons").doc(id).delete(); await loadCoupons(); alert("Coupon delete ho gaya."); }
-    catch (e) { alert(`Coupon delete nahi hua: ${errorText(e)}`); }
-  }
-
-  function validateCouponCode() {
-    const code = $("couponInput")?.value.trim().toUpperCase();
-    const msg = $("couponMessage");
-    appliedCoupon = null;
-    if (!code) { if (msg) msg.textContent = "Coupon code enter karein."; return false; }
-    const subtotal = cartItems().reduce((s, i) => s + Number(i.total || 0), 0);
-    const c = coupons.find(x => String(x.code||"").toUpperCase() === code);
-    if (!c) { if (msg) msg.textContent = "Invalid coupon code."; return false; }
-    const st = couponStatus(c);
-    if (st !== "active") { if (msg) msg.textContent = st === "scheduled" ? "Coupon abhi active nahi hua." : st === "used-up" ? "Coupon usage limit complete ho gayi." : "Coupon expire ho gaya."; return false; }
-    if (subtotal < Number(c.minOrder || 0)) { if (msg) msg.textContent = `Minimum order ${money(c.minOrder)} hona chahiye.`; return false; }
-    let discount = c.discountType === "percent" ? subtotal * Number(c.discountValue||0) / 100 : Number(c.discountValue||0);
-    discount = Math.min(subtotal, Math.max(0, discount));
-    appliedCoupon = { id: c.id, code: c.code, discountType: c.discountType, discountValue: Number(c.discountValue||0), discount };
-    if (msg) msg.textContent = `✓ ${c.code} applied — ${money(discount)} discount`;
-    return true;
-  }
-
-  function getCheckoutTotals() {
-    const subtotal = cartItems().reduce((s, i) => s + Number(i.total || 0), 0);
-    let discount = appliedCoupon?.discount || 0;
-    if (discount > subtotal) discount = subtotal;
-    return { subtotal, discount, total: Math.max(0, subtotal - discount) };
-  }
-
-  function buildUpiQr(amount) {
-    const upi = String(storeSettings.upiId || "").trim();
-    if (!upi) return "";
-    const params = new URLSearchParams({ pa: upi, pn: "CocoBiz", am: Number(amount).toFixed(2), cu: "INR", tn: "CocoBiz Order" });
-    const uri = `upi://pay?${params.toString()}`;
-    return `https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=8&data=${encodeURIComponent(uri)}`;
-  }
-
-  function renderPaymentStep() {
-    const totals = getCheckoutTotals();
-    const summary = $("paymentSummary");
-    if (summary) summary.innerHTML = `<div><span>Subtotal</span><b>${money(totals.subtotal)}</b></div>${totals.discount ? `<div class="coupon-discount"><span>Coupon (${escapeHtml(appliedCoupon.code)})</span><b>- ${money(totals.discount)}</b></div>` : ""}<div class="payment-total-line"><span>Total Payable</span><strong>${money(totals.total)}</strong></div>`;
-    const wrap = $("paymentQrWrap");
-    if (!wrap) return;
-    const qr = buildUpiQr(totals.total);
-    wrap.innerHTML = qr ? `<p><strong>Scan & Pay exactly ${money(totals.total)}</strong></p><img class="checkout-qr" src="${qr}" alt="UPI QR for exact order amount"><small>UPI ID: ${escapeHtml(storeSettings.upiId)}</small>` : storeSettings.qrImage ? `<p><strong>Payment QR</strong></p><img class="checkout-qr" src="${storeSettings.qrImage}" alt="CocoBiz payment QR"><small>Admin ne UPI ID set nahi kiya hai, isliye uploaded QR dikhaya ja raha hai.</small>` : `<div class="no-payment-settings">Admin ne abhi payment UPI/QR set nahi kiya hai. Cash on delivery choose karke order continue kar sakte hain.</div>`;
-  }
-
-  function showCheckoutStep(step) {
-    $("orderStep1")?.classList.toggle("hidden", step !== 1);
-    $("orderStep2")?.classList.toggle("hidden", step !== 2);
-    if (step === 2) renderPaymentStep();
-  }
-
-  function getGeoPosition() {
-    return new Promise(resolve => {
-      if (!$("captureDeliveryLocation")?.checked || !navigator.geolocation) return resolve(null);
-      navigator.geolocation.getCurrentPosition(pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }), () => resolve(null), { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 });
-    });
-  }
-
-  function distanceKm(lat1, lon1, lat2, lon2) {
-    const rad = Math.PI / 180, dLat = (lat2-lat1)*rad, dLon=(lon2-lon1)*rad;
-    const a=Math.sin(dLat/2)**2 + Math.cos(lat1*rad)*Math.cos(lat2*rad)*Math.sin(dLon/2)**2;
-    return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  }
-
-  async function createTrackingRecord(data) {
-    try {
-      const enc = new TextEncoder();
-      const buf = await crypto.subtle.digest("SHA-256", enc.encode(String(data.customer.number || "")));
-      const hash = Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
-      const tracking = cleanFirestoreValue({ orderId: data.clientId, mobileHash: hash, status: data.status, createdAt: data.createdAt, customerName: data.customer.name, total: data.total, couponDiscount: data.couponDiscount || 0, deliveryEligible: data.deliveryEligible || false, deliveryStart: data.deliveryStart || null, deliveryEnd: data.deliveryEnd || null, updatedAt: Date.now() });
-      await db.collection("publicTracking").doc(data.clientId).set(tracking);
-    } catch (e) { console.warn("Tracking record create failed", e); }
-  }
-
-  async function trackOrder(event) {
-    event.preventDefault();
-    const orderId = $("trackOrderId").value.trim();
-    const mobile = $("trackMobile").value.trim();
-    const box = $("trackingResult");
-    if (!box) return;
-    box.innerHTML = `<p class="modal-subtitle">Tracking...</p>`;
-    try {
-      const snap = await db.collection("publicTracking").doc(orderId).get();
-      if (!snap.exists) { box.innerHTML = `<p class="error-message">Order ID nahi mila.</p>`; return; }
-      const data = snap.data();
-      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(mobile));
-      const hash = Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
-      if (hash !== data.mobileHash) { box.innerHTML = `<p class="error-message">Order ID ya mobile number match nahi karta.</p>`; return; }
-      const delivery = data.deliveryEligible && data.deliveryStart && data.deliveryEnd ? `<div class="tracking-delivery"><strong>🚚 Estimated Delivery</strong><br>${new Date(data.deliveryStart).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})} – ${new Date(data.deliveryEnd).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</div>` : `<div class="tracking-delivery"><strong>🚚 Delivery date</strong><br>Location verification ke baad delivery window show hogi.</div>`;
-      box.innerHTML = `<div class="tracking-card"><h3>Order #${escapeHtml(data.orderId)}</h3><p><strong>${escapeHtml(data.customerName||"Customer")}</strong><br>Total: ${money(data.total)}</p><div class="tracking-status">Status: <b>${escapeHtml(data.status||"pending")}</b></div>${delivery}</div>`;
-    } catch (e) { box.innerHTML = `<p class="error-message">Tracking nahi ho saka: ${escapeHtml(errorText(e))}</p>`; }
-  }
-
-  async function updateTrackingStatus(orderId, status, extra = {}) {
-    try { await db.collection("publicTracking").doc(orderId).set(cleanFirestoreValue({ status, ...extra, updatedAt: Date.now() }), { merge: true }); } catch (e) { console.warn("Tracking status update failed", e); }
   }
 
   function bindEvents() {
@@ -715,6 +525,14 @@
     $("productSearch")?.addEventListener("input", event => {
       searchTerm = event.target.value.trim().toLowerCase();
       renderProducts();
+    });
+
+    document.querySelectorAll(".category-filter").forEach(button => {
+      button.addEventListener("click", () => {
+        activeCategory = button.dataset.category || "all";
+        document.querySelectorAll(".category-filter").forEach(b => b.classList.toggle("active", b === button));
+        renderProducts();
+      });
     });
 
     $("adminButton")?.addEventListener("click", openAdminFromLogo);
@@ -738,19 +556,19 @@
     $("enableNotificationsButton")?.addEventListener("click", enableOrderNotifications);
     $("salesmenTab")?.addEventListener("click", () => showAdminPanel("salesmen"));
     $("offersTab")?.addEventListener("click", () => showAdminPanel("offers"));
-    $("couponsTab")?.addEventListener("click", () => showAdminPanel("coupons"));
-    $("settingsTab")?.addEventListener("click", () => showAdminPanel("settings"));
     $("offerForm")?.addEventListener("submit", saveOffer);
-    $("couponForm")?.addEventListener("submit", generateCoupon);
-    $("couponList")?.addEventListener("click", event => { const b=event.target.closest("[data-delete-coupon]"); if(b) deleteCoupon(b.dataset.deleteCoupon); });
+    $("settingsTab")?.addEventListener("click", () => showAdminPanel("settings"));
+    $("couponsTab")?.addEventListener("click", () => showAdminPanel("coupons"));
+    $("couponForm")?.addEventListener("submit", saveCoupon);
+    $("generateCouponCode")?.addEventListener("click", () => { $("couponCode").value = generateCouponCode(); });
+    $("applyCouponButton")?.addEventListener("click", applyCouponFromCheckout);
+    $("checkoutNextButton")?.addEventListener("click", goToPaymentStep);
+    $("checkoutBackButton")?.addEventListener("click", () => setCheckoutStep(1));
+    $("useMyLocationButton")?.addEventListener("click", useMyLocation);
     $("storeSettingsForm")?.addEventListener("submit", saveStoreSettings);
-    $("useStoreLocation")?.addEventListener("click", useStoreLocation);
-    $("applyCouponButton")?.addEventListener("click", validateCouponCode);
-    $("backToOrderStep1")?.addEventListener("click", () => showCheckoutStep(1));
-    $("confirmOrderButton")?.addEventListener("click", confirmOrder);
-    $("trackOrderButton")?.addEventListener("click", () => { $("trackingResult").innerHTML=""; $("trackOrderModal")?.classList.remove("hidden"); });
+    $("trackOrderButton")?.addEventListener("click", () => $("trackOrderModal")?.classList.remove("hidden"));
     $("trackOrderForm")?.addEventListener("submit", trackOrder);
-    $("successTrackButton")?.addEventListener("click", () => { $("orderSuccessModal")?.classList.add("hidden"); $("trackOrderModal")?.classList.remove("hidden"); if($("successOrderId")?.textContent) $("trackOrderId").value=$("successOrderId").textContent; });
+    $("customerPaymentMethod")?.addEventListener("change", renderOrderCharges);
     $("deleteOfferButton")?.addEventListener("click", deleteOffer);
     $("offerAdminPreview")?.addEventListener("click", event => {
       const button = event.target.closest("[data-delete-offer]");
@@ -802,6 +620,8 @@
       const deleteButton = event.target.closest("[data-delete-order]");
       if (returnButton) processReturn(returnButton.dataset.returnOrder);
       if (billButton) printOrderBill(billButton.dataset.billOrder);
+      const statusSelect = event.target.closest("[data-status-order]");
+      if (statusSelect) updateOrderStatusDirect(statusSelect.dataset.statusOrder, statusSelect.value);
       if (acceptButton) updateOrderStatus(acceptButton.dataset.acceptOrder);
       if (paymentButton) receivePayment(paymentButton.dataset.paymentOrder);
       if (undoPaymentButton) undoLastPayment(undoPaymentButton.dataset.undoPaymentOrder);
@@ -1067,7 +887,7 @@
   }
 
   async function loadAdminData() {
-    await Promise.all([loadProducts(), loadOrders(), loadStoreSettings(), loadCoupons()]);
+    await Promise.all([loadProducts(), loadOrders()]);
 
     renderProducts();
     renderAdminProducts();
@@ -1078,11 +898,10 @@
     if (currentRole === "admin") {
       await loadSalesmen();
       await loadOffer();
+      await loadCoupons();
     }
     $("salesmenTab")?.classList.toggle("hidden", currentRole !== "admin");
     $("offersTab")?.classList.toggle("hidden", currentRole !== "admin");
-    $("couponsTab")?.classList.toggle("hidden", currentRole !== "admin");
-    $("settingsTab")?.classList.toggle("hidden", currentRole !== "admin");
     $("productForm")?.classList.toggle("hidden", currentRole === "salesman");
   }
 
@@ -1094,8 +913,8 @@
       orders: "ordersPanel",
       salesmen: "salesmenPanel",
       offers: "offersPanel",
-      coupons: "couponsPanel",
-      settings: "settingsPanel"
+      settings: "settingsPanel",
+      coupons: "couponsPanel"
     };
 
     Object.values(panels).forEach(id => {
@@ -1116,8 +935,8 @@
     if (name === "sale") { fillSaleProducts(); fillCustomers(); }
     if (name === "salesmen" && currentRole === "admin") loadSalesmen();
     if (name === "offers" && currentRole === "admin") loadOffer();
+    if (name === "settings" && currentRole === "admin") renderStoreSettings();
     if (name === "coupons" && currentRole === "admin") loadCoupons();
-    if (name === "settings" && currentRole === "admin") loadStoreSettings();
     if (name === "products" && currentRole === "salesman") renderSalesmanProducts();
   }
 
@@ -1240,6 +1059,7 @@
 
     const name = $("productName").value.trim();
     const description = $("productDescription").value.trim();
+    const category = $("productCategory")?.value || oldProduct?.category || "gift";
     const actualPrice = Number($("actualPrice").value);
     const salePrice = Number($("salePrice").value);
     const costRaw = $("costPrice")?.value.trim();
@@ -1281,6 +1101,7 @@
       const data = {
         name,
         description,
+        category,
         actualPrice,
         salePrice,
         costPrice,
@@ -1324,6 +1145,7 @@
     $("productId").value = id;
     $("productName").value = product.name || "";
     $("productDescription").value = product.description || "";
+    if ($("productCategory")) $("productCategory").value = product.category || "gift";
     $("actualPrice").value = product.actualPrice ?? "";
     $("salePrice").value = product.salePrice ?? "";
     if ($("costPrice")) $("costPrice").value = product.costPrice ?? "";
@@ -1545,70 +1367,381 @@
     }
   }
 
-  async function submitOrder(event) {
-    event.preventDefault();
-    if (!cartItems().length) return;
-    if (!validateCouponCode() && ($("couponInput")?.value.trim())) return;
-    const totals = getCheckoutTotals();
-    pendingCheckoutData = {
-      customer: { name: $("customerName").value.trim(), number: $("customerNumber").value.trim(), address: $("customerAddress").value.trim(), type: $("customerType").value },
-      coupon: appliedCoupon ? { ...appliedCoupon } : null,
-      totals
-    };
-    showCheckoutStep(2);
+  function calculateOrderCharges(subtotal) {
+    const freeAbove = Number(storeSettings.freeDeliveryAbove || 0);
+    const delivery = freeAbove > 0 && subtotal >= freeAbove ? 0 : Number(storeSettings.deliveryCharge || 0);
+    const feeBase = Number(storeSettings.platformFeeValue || 0);
+    const platformFee = storeSettings.platformFeeEnabled ? (storeSettings.platformFeeType === "percent" ? subtotal * feeBase / 100 : feeBase) : 0;
+    const beforeCoupon = subtotal + delivery + platformFee;
+    let discount = 0;
+    if (appliedCoupon) {
+      if (appliedCoupon.type === "percent") discount = beforeCoupon * Number(appliedCoupon.value || 0) / 100;
+      else discount = Number(appliedCoupon.value || 0);
+      if (appliedCoupon.maxDiscount > 0) discount = Math.min(discount, Number(appliedCoupon.maxDiscount));
+      discount = Math.min(discount, beforeCoupon);
+    }
+    return { subtotal, delivery, platformFee, couponDiscount: discount, grandTotal: Math.max(0, beforeCoupon - discount) };
   }
 
-  async function confirmOrder() {
-    if (window.__cocoOrderWorking || !pendingCheckoutData) return;
-    window.__cocoOrderWorking = true;
-    const items = cartItems();
-    if (!items.length) { window.__cocoOrderWorking = false; return; }
-    const totals = getCheckoutTotals();
-    const clientId = `CB-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-    const createdAt = Date.now();
-    const paymentMethod = $("orderPaymentMethod")?.value || "Online";
-    if (paymentMethod === "Online" && storeSettings.upiId && !window.__cocoOnlinePaymentConfirmed) {
-      const ok = confirm(`Payment QR me ${money(totals.total)} exact amount hai. UPI payment complete karne ke baad OK dabayein.`);
-      if (!ok) { window.__cocoOrderWorking = false; return; }
-      window.__cocoOnlinePaymentConfirmed = true;
+  function renderOrderCharges() {
+    const box = $("orderCharges"); if (!box) return;
+    const subtotal = cartItems().reduce((sum, item) => sum + item.total, 0);
+    const c = calculateOrderCharges(subtotal);
+    box.innerHTML = `<div class="charge-row"><span>Items subtotal</span><b>${money(c.subtotal)}</b></div>
+      <div class="charge-row"><span>Delivery</span><b>${c.delivery ? money(c.delivery) : "FREE"}</b></div>
+      <div class="charge-row"><span>Platform fee</span><b>${c.platformFee ? money(c.platformFee) : "FREE"}</b></div>
+      ${c.couponDiscount ? `<div class="charge-row discount"><span>Coupon (${escapeHtml(appliedCoupon?.code || "")})</span><b>- ${money(c.couponDiscount)}</b></div>` : ""}
+      <div class="charge-row total"><span>Total payable</span><b>${money(c.grandTotal)}</b></div>`;
+    const pm = $("customerPaymentMethod");
+    if (pm) {
+      const onlineAllowed = !!storeSettings.onlinePaymentEnabled;
+      const upiAllowed = !!storeSettings.upiEnabled;
+      const upiOption = pm.querySelector('option[value="UPI"]');
+      const onlineOption = pm.querySelector('option[value="ONLINE"]');
+      if (upiOption) upiOption.hidden = !upiAllowed;
+      if (onlineOption) onlineOption.hidden = !onlineAllowed;
+      if (pm.value === "UPI" && !upiAllowed) pm.value = "COD";
+      if (pm.value === "ONLINE" && !onlineAllowed) pm.value = upiAllowed ? "UPI" : "COD";
     }
-    const geo = await getGeoPosition();
-    let deliveryEligible = false, deliveryStart = null, deliveryEnd = null, distanceFromStoreKm = null;
-    if (geo && Number.isFinite(Number(storeSettings.storeLat)) && Number.isFinite(Number(storeSettings.storeLng))) {
-      distanceFromStoreKm = distanceKm(Number(storeSettings.storeLat), Number(storeSettings.storeLng), geo.lat, geo.lng);
-      deliveryEligible = distanceFromStoreKm <= 25;
-      if (deliveryEligible) { deliveryStart = createdAt + 7*86400000; deliveryEnd = createdAt + 15*86400000; }
-    }
-    const data = cleanFirestoreValue({
-      clientId, createdAt, date: new Date(createdAt).toLocaleString("en-IN"), source: "online", status: publicSalesmanId ? "salesman_pending" : "pending",
-      customer: pendingCheckoutData.customer, items, returns: [], total: totals.total, originalTotal: totals.subtotal, couponCode: appliedCoupon?.code || null, couponDiscount: totals.discount, netTotal: totals.total,
-      paidAmount: 0, dueAmount: totals.total, paymentMethod, paymentHistory: [], salesmanId: publicSalesmanId || null, salesmanName: publicSalesmanProfile?.name || null, salesmanNumber: publicSalesmanProfile?.number || null,
-      customerLat: geo?.lat ?? null, customerLng: geo?.lng ?? null, distanceFromStoreKm, deliveryEligible, deliveryStart, deliveryEnd
-    });
-    try {
-      if (appliedCoupon?.id) {
-        const couponRef = db.collection("coupons").doc(appliedCoupon.id);
-        await db.runTransaction(async tx => {
-          const snap = await tx.get(couponRef);
-          if (!snap.exists) throw new Error("Coupon ab available nahi hai.");
-          const c = snap.data();
-          if (couponStatus(c) !== "active") throw new Error("Coupon expire/used-up ho gaya.");
-          const max = Number(c.maxUses || 0), used = Number(c.usedCount || 0);
-          if (max > 0 && used >= max) throw new Error("Coupon usage limit complete ho gayi.");
-          tx.update(couponRef, { usedCount: used + 1, updatedAt: Date.now() });
-        });
+    const upiBox = $("upiPaymentBox");
+    if (upiBox) {
+      const show = $("customerPaymentMethod")?.value === "UPI" && !!storeSettings.upiEnabled;
+      upiBox.classList.toggle("hidden", !show);
+      if (show) {
+        const upiId = storeSettings.upiId || "kunalverma5555@ibl";
+        const name = encodeURIComponent(storeSettings.upiName || "CocoBiz");
+        const amount = Number(c.grandTotal || 0).toFixed(2);
+        const txn = `CB-${Date.now()}`;
+        const note = encodeURIComponent(`CocoBiz Order ${txn}`);
+        const uri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${name}&am=${amount}&cu=INR&tn=${note}`;
+        if ($("upiIdDisplay")) $("upiIdDisplay").textContent = upiId;
+        if ($("upiAmountText")) $("upiAmountText").textContent = `Pay ${money(c.grandTotal)}`;
+        if ($("upiPayButton")) $("upiPayButton").href = uri;
+        renderDynamicUpiQr(uri);
       }
+    }
+  }
+
+  function renderDynamicUpiQr(uri) {
+    const box = $("dynamicUpiQr"); if (!box) return;
+    box.innerHTML = "";
+    const img = document.createElement("img");
+    img.className = "upi-qr";
+    img.alt = "CocoBiz UPI QR";
+    img.loading = "eager";
+    img.src = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=8&data=${encodeURIComponent(uri)}`;
+    img.onerror = () => {
+      box.innerHTML = storeSettings.upiQrImage ? `<img src="${storeSettings.upiQrImage}" alt="CocoBiz UPI QR" class="upi-qr">` : `<div class="qr-fallback">QR load nahi hua. <b>Pay with UPI App</b> button use karein.</div>`;
+    };
+    box.appendChild(img);
+  }
+
+  async function loadStoreSettings() {
+    try {
+      const snap = await db.collection("settings").doc("store").get();
+      if (snap.exists) storeSettings = { ...storeSettings, ...snap.data() };
+    } catch (e) { console.warn("Store settings load failed", e); }
+  }
+
+  async function saveStoreSettings(event) {
+    event.preventDefault();
+    if (currentRole !== "admin") return;
+    let qrImage = storeSettings.upiQrImage || "";
+    const qrFile = $("upiQrUpload")?.files?.[0];
+    if (qrFile) {
+      try { qrImage = await compressImage(qrFile, 1000, 0.82); } catch (e) { alert(`QR image save nahi hua: ${errorText(e)}`); return; }
+    }
+    const minDays = Math.max(1, Number($("deliveryMinDays")?.value || 7));
+    const maxDays = Math.max(minDays, Number($("deliveryMaxDays")?.value || 15));
+    storeSettings = {
+      ...storeSettings,
+      deliveryCharge: Math.max(0, Number($("deliveryCharge").value || 0)),
+      freeDeliveryAbove: Math.max(0, Number($("freeDeliveryAbove").value || 0)),
+      platformFeeEnabled: $("platformFeeEnabled").checked,
+      platformFeeType: $("platformFeeType").value,
+      platformFeeValue: Math.max(0, Number($("platformFeeValue").value || 0)),
+      upiEnabled: $("upiEnabled").checked,
+      upiId: $("upiId").value.trim() || "kunalverma5555@ibl",
+      upiName: "CocoBiz",
+      upiQrImage: qrImage,
+      onlinePaymentEnabled: $("onlinePaymentEnabled").checked,
+      razorpayKeyId: $("razorpayKeyId").value.trim(),
+      deliveryRadiusKm: Math.max(0, Number($("deliveryRadiusKm")?.value || 25)),
+      deliveryMinDays: minDays,
+      deliveryMaxDays: maxDays,
+      storeLatitude: $("storeLatitude")?.value === "" ? null : Number($("storeLatitude").value),
+      storeLongitude: $("storeLongitude")?.value === "" ? null : Number($("storeLongitude").value),
+      updatedAt: Date.now()
+    };
+    try { await db.collection("settings").doc("store").set(storeSettings, { merge: true }); renderOrderCharges(); renderStoreSettings(); alert("Store settings save ho gayi."); }
+    catch (e) { alert(`Settings save nahi hui: ${errorText(e)}`); }
+  }
+
+  function renderStoreSettings() {
+    if ($("deliveryCharge")) $("deliveryCharge").value = storeSettings.deliveryCharge || 0;
+    if ($("freeDeliveryAbove")) $("freeDeliveryAbove").value = storeSettings.freeDeliveryAbove || "";
+    if ($("platformFeeEnabled")) $("platformFeeEnabled").checked = !!storeSettings.platformFeeEnabled;
+    if ($("platformFeeType")) $("platformFeeType").value = storeSettings.platformFeeType || "flat";
+    if ($("platformFeeValue")) $("platformFeeValue").value = storeSettings.platformFeeValue || 0;
+    if ($("upiEnabled")) $("upiEnabled").checked = storeSettings.upiEnabled !== false;
+    if ($("upiId")) $("upiId").value = storeSettings.upiId || "kunalverma5555@ibl";
+    if ($("deliveryRadiusKm")) $("deliveryRadiusKm").value = storeSettings.deliveryRadiusKm ?? 25;
+    if ($("deliveryMinDays")) $("deliveryMinDays").value = storeSettings.deliveryMinDays ?? 7;
+    if ($("deliveryMaxDays")) $("deliveryMaxDays").value = storeSettings.deliveryMaxDays ?? 15;
+    if ($("storeLatitude")) $("storeLatitude").value = storeSettings.storeLatitude ?? "";
+    if ($("storeLongitude")) $("storeLongitude").value = storeSettings.storeLongitude ?? "";
+    if ($("settingsQrPreview")) $("settingsQrPreview").src = storeSettings.upiQrImage || "assets/cocobiz_upi_qr.png";
+    if ($("onlinePaymentEnabled")) $("onlinePaymentEnabled").checked = !!storeSettings.onlinePaymentEnabled;
+    if ($("razorpayKeyId")) $("razorpayKeyId").value = storeSettings.razorpayKeyId || "";
+  }
+
+  function statusLabel(status) { return ORDER_STATUSES.find(x => x[0] === status)?.[1] || status || "Order Placed"; }
+  function statusTimeline(order) {
+    const current = order.status || "pending";
+    const idx = ORDER_STATUSES.findIndex(x => x[0] === current);
+    const visible = ORDER_STATUSES.filter(x => !["cancelled","returned"].includes(x[0]));
+    return `<div class="status-timeline">${visible.map((x,i)=>{ const done = idx >= ORDER_STATUSES.findIndex(y=>y[0]===x[0]); return `<div class="timeline-step ${done?"done":""}"><span>${done?"✓":i+1}</span><small>${x[1]}</small></div>`; }).join("")}</div>${["cancelled","returned"].includes(current)?`<div class="exception-status">${current === "cancelled" ? "❌ Order Cancelled" : "↩ Order Returned"}</div>`:""}`;
+  }
+
+  async function trackOrder(event) {
+    event.preventDefault();
+    const id = $("trackOrderId").value.trim(); const mobile = $("trackMobile").value.trim();
+    const box = $("trackOrderResult");
+    box.innerHTML = "Searching...";
+    try {
+      const snap = await db.collection("orders").where("clientId", "==", id).limit(1).get();
+      if (snap.empty) { box.innerHTML = `<p class="modal-subtitle">Order nahi mila. Order ID check karein.</p>`; return; }
+      const order = { id: snap.docs[0].id, ...snap.docs[0].data() };
+      if (String(order.customer?.number || "") !== mobile) { box.innerHTML = `<p class="modal-subtitle">Order ID aur mobile number match nahi hua.</p>`; return; }
+      box.innerHTML = `<div class="tracking-card"><div class="order-heading-row"><strong>#${escapeHtml(order.clientId || order.id)}</strong><span class="status-badge">${escapeHtml(statusLabel(order.status))}</span></div>${statusTimeline(order)}<div class="delivery-estimate-card">🚚 <b>Estimated Delivery</b><br>${escapeHtml(order.deliveryEstimate || "7–15 days")}${order.deliveryDistanceKm != null ? `<br><small>Approx. distance: ${Number(order.deliveryDistanceKm).toFixed(1)} km</small>` : ""}</div><div class="order-grand-total">Total: <strong>${money(order.netTotal ?? order.total ?? 0)}</strong><br><small>Last updated: ${new Date(order.updatedAt || order.createdAt || Date.now()).toLocaleString("en-IN")}</small></div></div>`;
+    } catch(e) { box.innerHTML = `<p class="modal-subtitle">Tracking failed: ${escapeHtml(errorText(e))}</p>`; }
+  }
+
+  async function openOnlinePayment(orderData, amount) {
+    if (!storeSettings.onlinePaymentEnabled || !storeSettings.razorpayKeyId) throw new Error("Online payment abhi configure nahi hai. Admin Store Settings me Razorpay Key ID set karein.");
+    await loadScript("https://checkout.razorpay.com/v1/checkout.js");
+    const createPaymentOrder = firebase.functions().httpsCallable("createRazorpayOrder");
+    const result = await createPaymentOrder({ amount: Math.round(amount * 100), currency: "INR", receipt: orderData.clientId });
+    const rzpOrder = result.data;
+    return new Promise((resolve, reject) => {
+      const options = { key: storeSettings.razorpayKeyId, amount: rzpOrder.amount, currency: "INR", name: "CocoBiz", description: `Order ${orderData.clientId}`, order_id: rzpOrder.id, prefill: { name: orderData.customer.name, contact: orderData.customer.number }, handler: async response => {
+        try { const verify = firebase.functions().httpsCallable("verifyRazorpayPayment"); await verify({ orderId: rzpOrder.id, paymentId: response.razorpay_payment_id, signature: response.razorpay_signature, clientId: orderData.clientId }); resolve(response); } catch(e) { reject(e); }
+      }, modal: { ondismiss: () => reject(new Error("Payment cancelled.")) } };
+      const rzp = new Razorpay(options); rzp.open();
+    });
+  }
+
+
+  function formatDeliveryRange(createdAt) {
+    const base = new Date(createdAt || Date.now());
+    const min = new Date(base); min.setDate(min.getDate() + Number(storeSettings.deliveryMinDays || 7));
+    const max = new Date(base); max.setDate(max.getDate() + Number(storeSettings.deliveryMaxDays || 15));
+    const fmt = d => d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+    return `${fmt(min)} – ${fmt(max)}`;
+  }
+
+  function haversineKm(lat1, lon1, lat2, lon2) {
+    const R=6371, toRad=x=>x*Math.PI/180;
+    const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+    const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+    return 2*R*Math.asin(Math.sqrt(a));
+  }
+
+  function useMyLocation() {
+    if (!navigator.geolocation) { $("deliveryLocationMessage").textContent = "Is device me location support nahi hai."; return; }
+    $("deliveryLocationMessage").textContent = "Location check ho raha hai...";
+    navigator.geolocation.getCurrentPosition(pos => {
+      customerLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      const sLat=Number(storeSettings.storeLatitude), sLng=Number(storeSettings.storeLongitude);
+      if (Number.isFinite(sLat) && Number.isFinite(sLng)) {
+        const distance=haversineKm(sLat,sLng,customerLocation.lat,customerLocation.lng);
+        const radius=Number(storeSettings.deliveryRadiusKm||25);
+        $("deliveryLocationMessage").textContent = distance <= radius ? `Delivery available • approx. ${distance.toFixed(1)} km away` : `This location is ${distance.toFixed(1)} km away; configured radius is ${radius} km.`;
+      } else {
+        $("deliveryLocationMessage").textContent = "Location saved. Admin Store Settings me store latitude/longitude set karne par 25 km check hoga.";
+      }
+    }, () => { $("deliveryLocationMessage").textContent = "Location permission nahi mili. Address se order continue kar sakte hain."; }, { enableHighAccuracy: true, timeout: 10000 });
+  }
+
+  function setCheckoutStep(step) {
+    document.querySelectorAll(".checkout-step").forEach(el => el.classList.toggle("hidden", Number(el.dataset.step)!==step));
+    const modal=document.querySelector("#orderModal .modal-box"); if(modal) modal.dataset.checkoutStep=String(step);
+    if(step===1) renderOrderCharges();
+    else renderOrderCharges();
+  }
+
+  function goToPaymentStep() {
+    if (!$('customerName')?.value.trim() || !$('customerNumber')?.value.trim() || !$('customerAddress')?.value.trim() || !$('customerType')?.value) { alert("Name, mobile, address aur customer type complete karein."); return; }
+    if (!/^[0-9]{10}$/.test($("customerNumber").value.trim())) { alert("10-digit mobile number enter karein."); return; }
+    const sLat=Number(storeSettings.storeLatitude), sLng=Number(storeSettings.storeLongitude);
+    if (customerLocation && Number.isFinite(sLat) && Number.isFinite(sLng)) {
+      const distance=haversineKm(sLat,sLng,customerLocation.lat,customerLocation.lng);
+      const radius=Number(storeSettings.deliveryRadiusKm||25);
+      if (radius>0 && distance>radius) { alert(`Is location par delivery available nahi hai. Configured delivery radius ${radius} km hai.`); return; }
+    }
+    setCheckoutStep(2);
+    renderOrderCharges();
+  }
+
+  function generateCouponCode() {
+    return "COCO" + Math.random().toString(36).slice(2,8).toUpperCase();
+  }
+
+  async function loadCoupons() {
+    if (!db) return [];
+    try { const snap=await db.collection("coupons").get(); const list=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.code||"").localeCompare(String(b.code||""))); renderCouponsAdmin(list); return list; }
+    catch(e){ console.warn("Coupons load failed",e); return []; }
+  }
+
+  function renderCouponsAdmin(list) {
+    const box=$("couponsList"); if(!box) return;
+    const now=Date.now();
+    box.innerHTML=list.length?list.map(c=>{ const exp=c.validUntil && Number(c.validUntil)<now; return `<div class="admin-product"><div><strong>${escapeHtml(c.code)}</strong><small><br>${c.type==='percent'?Number(c.value||0)+'%':money(c.value)} off · Min ${money(c.minOrder||0)}<br>Uses: ${Number(c.usageCount||0)} / ${Number(c.usageLimit||0)||'∞'} · ${c.validUntil?('Until '+new Date(c.validUntil).toLocaleString('en-IN')):'No expiry'}</small></div><span class="status-badge">${!c.active?'Inactive':exp?'Expired':'Active'}</span><button class="delete-button" data-delete-coupon="${escapeHtml(c.id)}">Delete</button></div>`}).join(''):'<p class="modal-subtitle">Abhi koi coupon nahi hai.</p>';
+    box.querySelectorAll('[data-delete-coupon]').forEach(b=>b.onclick=()=>deleteCoupon(b.dataset.deleteCoupon));
+  }
+
+  async function saveCoupon(event) {
+    event.preventDefault(); if(currentRole!=="admin") return;
+    const code=$("couponCode").value.trim().toUpperCase().replace(/\s+/g,'');
+    const type=$("couponType").value; const value=Number($("couponValue").value||0);
+    if(!code || !value || value<0){alert("Coupon code aur valid discount value dein.");return;}
+    const validUntil=$("couponValidUntil").value ? new Date($("couponValidUntil").value).getTime() : null;
+    if(validUntil && validUntil<=Date.now()){alert("Expiry future me rakhein.");return;}
+    const data={code,type,value,minOrder:Math.max(0,Number($("couponMinOrder").value||0)),maxDiscount:Math.max(0,Number($("couponMaxDiscount").value||0)),usageLimit:Math.max(0,parseInt($("couponUsageLimit").value||0,10)),perCustomerLimit:Math.max(0,parseInt($("couponPerCustomerLimit").value||0,10)),validUntil,active:$("couponActive").checked,usageCount:0,updatedAt:Date.now(),createdBy:auth.currentUser.uid};
+    try { await db.collection("coupons").doc(code).set(data,{merge:true}); $("couponForm").reset(); $("couponActive").checked=true; await loadCoupons(); alert("Coupon save ho gaya."); } catch(e){alert(`Coupon save nahi hua: ${errorText(e)}`);}
+  }
+
+  async function deleteCoupon(id) { if(currentRole!=="admin"||!id)return; if(!confirm("Is coupon ko delete karna hai?"))return; try{await db.collection("coupons").doc(id).delete();await loadCoupons();}catch(e){alert(`Coupon delete nahi hua: ${errorText(e)}`)} }
+
+  async function applyCouponFromCheckout() {
+    const code=$("couponCodeInput")?.value.trim().toUpperCase().replace(/\s+/g,''); const msg=$("couponMessage");
+    if(!code){appliedCoupon=null; msg.textContent="Coupon code enter karein."; renderOrderCharges(); return;}
+    try {
+      const snap=await db.collection("coupons").doc(code).get();
+      if(!snap.exists){appliedCoupon=null;msg.textContent="Invalid coupon code.";renderOrderCharges();return;}
+      const c={id:snap.id,...snap.data()}; const subtotal=cartItems().reduce((s,i)=>s+i.total,0);
+      if(c.active===false){throw new Error("Coupon inactive hai.");}
+      if(c.validUntil && Date.now()>Number(c.validUntil)){throw new Error("Coupon expire ho gaya hai.");}
+      if(Number(c.usageLimit||0)>0 && Number(c.usageCount||0)>=Number(c.usageLimit)){throw new Error("Coupon usage limit complete ho gayi hai.");}
+      if(subtotal<Number(c.minOrder||0)){throw new Error(`Minimum order ${money(c.minOrder)} hona chahiye.`);}
+      appliedCoupon=c; msg.textContent=`Coupon applied: ${c.type==='percent'?Number(c.value)+'%':money(c.value)} off`; renderOrderCharges();
+    }catch(e){appliedCoupon=null;msg.textContent=errorText(e);renderOrderCharges();}
+  }
+
+  async function submitOrder(event) {
+    event.preventDefault();
+    if (window.__cocoOrderWorking) return;
+    window.__cocoOrderWorking = true;
+
+    const items = cartItems();
+    if (!items.length) {
+      window.__cocoOrderWorking = false;
+      return;
+    }
+
+    const subtotal = items.reduce((sum, item) => sum + item.total, 0);
+    const charges = calculateOrderCharges(subtotal);
+    const total = charges.grandTotal;
+    const clientId = `CB-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    const paymentMethod = $("customerPaymentMethod")?.value || "COD";
+    if (paymentMethod === "UPI" && !$("upiUtr")?.value.trim()) { window.__cocoOrderWorking=false; alert("UPI payment ke baad UTR / Transaction ID enter karein."); return; }
+    const deliveryEstimate = formatDeliveryRange(Date.now());
+
+    const data = {
+      clientId,
+      createdAt: Date.now(),
+      date: new Date().toLocaleString("en-IN"),
+      source: "online",
+      status: "pending",
+      customer: {
+        name: $("customerName").value.trim(),
+        number: $("customerNumber").value.trim(),
+        address: $("customerAddress").value.trim(),
+        type: $("customerType").value
+      },
+      items,
+      returns: [],
+      subtotal: charges.subtotal,
+      deliveryCharge: charges.delivery,
+      platformFee: charges.platformFee,
+      couponCode: appliedCoupon?.code || null,
+      couponDiscount: charges.couponDiscount || 0,
+      total,
+      deliveryEstimate,
+      deliveryDistanceKm: customerLocation && Number.isFinite(Number(storeSettings.storeLatitude)) && Number.isFinite(Number(storeSettings.storeLongitude)) ? haversineKm(Number(storeSettings.storeLatitude), Number(storeSettings.storeLongitude), customerLocation.lat, customerLocation.lng) : null,
+      originalTotal: total,
+      returnedTotal: 0,
+      netTotal: total,
+      paidAmount: 0,
+      dueAmount: total,
+      paymentMethod,
+      paymentStatus: paymentMethod === "UPI" && $("upiUtr")?.value.trim() ? "submitted" : "pending",
+      utr: paymentMethod === "UPI" ? ($("upiUtr")?.value.trim() || null) : null,
+      paymentHistory: [],
+      salesmanId: publicSalesmanId || null,
+      salesmanName: publicSalesmanProfile?.name || null,
+      salesmanNumber: publicSalesmanProfile?.number || null
+    };
+    data.status = publicSalesmanId ? "salesman_pending" : "pending";
+
+    const saveCloud = async () => {
       await db.collection("orders").add(data);
-      await createTrackingRecord(data);
-      const message = ["*CocoBiz NEW ORDER*", `Order ID: ${clientId}`, "", ...items.map(item => `${item.name} × ${item.quantity} = ${money(item.total)}`), "", `Subtotal: ${money(totals.subtotal)}`, totals.discount ? `Coupon ${appliedCoupon.code}: -${money(totals.discount)}` : "", `Total: ${money(totals.total)}`, `Payment: ${paymentMethod}`, `Name: ${data.customer.name}`, `Mobile: ${data.customer.number}`, `Address: ${data.customer.address}`, `Type: ${data.customer.type}`].filter(Boolean).join("\n");
+    };
+
+    try {
+      // Try immediately; if the network is temporarily unavailable,
+      // Firestore offline persistence will queue the write and sync later.
+      await saveCloud();
+      if (data.paymentMethod === "ONLINE") {
+        try {
+          const payment = await openOnlinePayment(data, total);
+          data.paymentStatus = "paid"; data.paidAmount = total; data.dueAmount = 0; data.paymentId = payment.razorpay_payment_id; data.status = "accepted"; data.updatedAt = Date.now();
+          const ref = (await db.collection("orders").where("clientId", "==", clientId).limit(1).get()).docs[0];
+          if (ref) await ref.ref.update({ paymentStatus: "paid", paidAmount: total, dueAmount: 0, paymentId: data.paymentId, status: "accepted", acceptedAt: Date.now(), updatedAt: Date.now() });
+        } catch (paymentError) {
+          alert(`Online payment complete nahi hua: ${errorText(paymentError)}\n\nOrder ko COD/pending ke roop me rakha gaya hai.`);
+        }
+      }
+
+      localStorage.removeItem("cocobiz_pending_order_" + clientId);
+
+      const message = [
+        "*CocoBiz NEW ORDER*",
+        `Order ID: ${clientId}`,
+        "",
+        ...items.map(item => `${item.name} × ${item.quantity} = ${money(item.total)}`),
+        "",
+        `Subtotal: ${money(charges.subtotal)}`, `Delivery: ${charges.delivery ? money(charges.delivery) : "FREE"}`, `Platform fee: ${charges.platformFee ? money(charges.platformFee) : "FREE"}`, `Coupon: ${data.couponCode || "None"}`, `Discount: ${data.couponDiscount ? money(data.couponDiscount) : "₹0.00"}`, `Total: ${money(total)}`, `Estimated delivery: ${deliveryEstimate}`, `Payment: ${data.paymentMethod}`,
+        ...(data.paymentMethod === "UPI" ? [`UPI ID: ${storeSettings.upiId}`, `UTR: ${data.utr || "Not submitted"}`] : []),
+        `Name: ${data.customer.name}`,
+        `Mobile: ${data.customer.number}`,
+        `Address: ${data.customer.address}`,
+        `Type: ${data.customer.type}`
+      ].join("\n");
+
       const targetNumber = data.salesmanNumber ? String(data.salesmanNumber).replace(/\D/g, "") : WHATSAPP_NUMBER;
       const normalizedTarget = targetNumber.length === 10 ? "91" + targetNumber : targetNumber;
-      try { window.open(`https://wa.me/${normalizedTarget}?text=${encodeURIComponent(message)}`, "_blank"); } catch {}
+      const waUrl = `https://wa.me/${normalizedTarget}?text=${encodeURIComponent(message)}`;
+      try { window.open(waUrl, "_blank"); } catch {}
+
       showOrderSuccess(data.customer.number, clientId);
-      cart = {}; appliedCoupon = null; pendingCheckoutData = null; window.__cocoOnlinePaymentConfirmed = false; updateCart(); $("orderForm").reset(); $("couponMessage").textContent = ""; $("orderModal")?.classList.add("hidden"); showCheckoutStep(1);
+
+      cart = {};
+      updateCart();
+      $("orderForm").reset();
+      appliedCoupon = null; customerLocation = null; setCheckoutStep(1);
+      $("orderModal")?.classList.add("hidden");
     } catch (error) {
-      alert(`Order save nahi hua: ${errorText(error)}`);
-    } finally { window.__cocoOrderWorking = false; }
+      // Keep a local copy so it can be retried automatically after connectivity returns.
+      localStorage.setItem(
+        "cocobiz_pending_order_" + clientId,
+        JSON.stringify(data)
+      );
+
+      alert(`Order cloud par save nahi hua: ${errorText(error)}\n\nInternet/Firebase connection theek hote hi retry kiya ja sakta hai.`);
+    } finally {
+      window.__cocoOrderWorking = false;
+    }
   }
 
   function showOrderSuccess(customerNumber, orderId) {
@@ -1669,9 +1802,10 @@
                 <strong>Order #${escapeHtml(order.id)}</strong>
                 <small>${escapeHtml(order.date || "")}</small>
               </div>
-              <span class="status-badge">${escapeHtml(order.status || "pending")}</span>
+              <div class="status-control-wrap"><span class="status-badge">${escapeHtml(statusLabel(order.status || "pending"))}</span>${currentRole === "admin" ? `<select class="status-select" data-status-order="${escapeHtml(order.id)}">${ORDER_STATUSES.map(st=>`<option value="${st[0]}" ${st[0]===(order.status||"pending")?"selected":""}>${st[1]}</option>`).join("")}</select>` : ""}</div>
             </div>
 
+            ${statusTimeline(order)}
             <p>
               ${order.salesmanName ? `<span class="salesman-tag">👤 ${escapeHtml(order.salesmanName)}</span><br>` : ""}
               <b>${escapeHtml(order.customer?.name || "Customer")}</b><br>
@@ -1736,6 +1870,15 @@
     }
   }
 
+  async function updateOrderStatusDirect(orderId, status) {
+    const order = orders.find(o => o.id === orderId); if (!order || currentRole !== "admin") return;
+    try {
+      if (status === "accepted" && !["accepted","received","packed","shipped","out_for_delivery","delivered"].includes(order.status)) await adjustStockForOrder(order, -1);
+      await db.collection("orders").doc(orderId).update({ status, updatedAt: Date.now(), ...(status === "accepted" ? { acceptedAt: Date.now() } : {}), ...(status === "delivered" ? { deliveredAt: Date.now() } : {}) });
+      await loadOrders(); renderOrders(); renderSalesDashboard();
+    } catch(e) { alert(`Status update nahi hua: ${errorText(e)}`); }
+  }
+
   async function updateOrderStatus(orderId) {
     const order = orders.find(item => item.id === orderId);
     if (!order) return;
@@ -1748,7 +1891,6 @@
     try {
       if (status === "accepted" && !["accepted","received"].includes(order.status)) await adjustStockForOrder(order, -1);
       await db.collection("orders").doc(orderId).update({ status, salesmanAcceptedAt: status === "pending_admin" ? Date.now() : (order.salesmanAcceptedAt || null), acceptedAt: status === "accepted" ? Date.now() : (order.acceptedAt || null), updatedAt: Date.now() });
-      await updateTrackingStatus(orderId, status);
       await loadOrders(); renderOrders(); renderSalesDashboard(); if(currentRole === "admin") renderSalesmen();
       alert(message);
     } catch(error) { alert(`Order status update नहीं हुआ: ${errorText(error)}`); }
@@ -1803,7 +1945,6 @@
         status: dueAmount === 0 ? "received" : (order.status || "accepted"),
         updatedAt: Date.now()
       });
-      await updateTrackingStatus(orderId, dueAmount === 0 ? "received" : (order.status || "accepted"));
       await loadOrders();
       renderOrders();
       renderSalesDashboard();
@@ -1862,7 +2003,6 @@
         status,
         updatedAt: Date.now()
       });
-      await updateTrackingStatus(orderId, status);
       await loadOrders();
       renderOrders();
       renderSalesDashboard();
@@ -1893,7 +2033,7 @@
     const box = $("acceptedOrderFolders");
     if (!box) return;
 
-    const accepted = orders.filter(order => ["accepted", "received"].includes(order.status));
+    const accepted = orders.filter(order => !["pending","salesman_pending","pending_admin","cancelled","returned"].includes(order.status));
     const groups = new Map();
 
     accepted.forEach(order => {
@@ -1940,7 +2080,7 @@
 
   function openCustomerAccount(key) {
     const accepted = orders.filter(order =>
-      ["accepted", "received"].includes(order.status) && customerKey(order) === key
+      !["pending","salesman_pending","pending_admin","cancelled","returned"].includes(order.status) && customerKey(order) === key
     );
     if (!accepted.length) return;
 
@@ -2238,7 +2378,7 @@
   }
 
   function acceptedOrdersForReports() {
-    const accepted = orders.filter(order => ["accepted", "received"].includes(order.status));
+    const accepted = orders.filter(order => !["pending","salesman_pending","pending_admin","cancelled","returned"].includes(order.status));
     if (reportPeriod === "all") return accepted;
     const now = new Date();
     const start = new Date(now);
@@ -2405,7 +2545,8 @@
 
   async function loadInitialData() {
     await loadPublicSalesmanProfile();
-    await Promise.all([loadProducts(), loadOrders(), loadOffer(), loadStoreSettings(), loadCoupons()]);
+    await Promise.all([loadProducts(), loadOrders(), loadOffer(), loadStoreSettings()]);
+    renderStoreSettings();
     renderProducts();
     renderCustomerOffer();
     updateCart();

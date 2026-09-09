@@ -2,16 +2,6 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isAdmin() {
-      return request.auth != null && (
-        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
-      );
-    }
-    function isSalesman() {
-      return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'salesman';
-    }
-
     match /products/{productId} {
       allow read: if true;
       allow write: if request.auth != null;
@@ -21,52 +11,54 @@ service cloud.firestore {
       allow create: if true;
       allow read: if request.auth != null;
       allow update, delete: if request.auth != null && (
-        isAdmin() || resource.data.salesmanId == request.auth.uid
+        // Admins are authenticated users without a salesman profile.
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman' ||
+        resource.data.salesmanId == request.auth.uid
       );
     }
 
     match /users/{userId} {
-      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
-      allow create: if request.auth != null && isAdmin() && request.resource.data.role == 'salesman';
-      allow update: if request.auth != null && (request.auth.uid == userId || isAdmin());
-      allow delete: if request.auth != null && isAdmin();
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
+      );
+      allow create: if request.auth != null && request.resource.data.role == 'salesman';
+      allow update: if request.auth != null && (
+        request.auth.uid == userId ||
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
+      );
+      allow delete: if request.auth != null && (
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
+      );
     }
+
 
     match /offers/{offerId} {
       allow read: if true;
-      allow create, update, delete: if request.auth != null && isAdmin();
+      allow create, update, delete: if request.auth != null && (
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
+      );
+    }
+
+    // Only non-sensitive fields needed by a shared salesman catalogue are public.
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null && (
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
+      );
     }
 
     match /publicSalesmen/{salesmanId} {
       allow read: if true;
-      allow create, update: if request.auth != null && (request.auth.uid == salesmanId || isAdmin());
-      allow delete: if request.auth != null && (request.auth.uid == salesmanId || isAdmin());
-    }
-
-    // Public-safe payment settings. Do not store bank/card credentials here.
-    match /settings/{settingId} {
-      allow read: if settingId == 'store';
-      allow create, update, delete: if request.auth != null && isAdmin();
-    }
-
-    // Coupon definitions are public so the customer can validate a code before checkout.
-    match /coupons/{couponId} {
-      allow read: if true;
-      allow create: if request.auth != null && isAdmin();
-      allow update: if (request.auth != null && isAdmin()) || (
-        request.auth == null &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedCount','updatedAt']) &&
-        request.resource.data.usedCount == resource.data.usedCount + 1
-      );
-      allow delete: if request.auth != null && isAdmin();
-    }
-
-    // Contains only a SHA-256 mobile hash plus order status/delivery data, not the full mobile number.
-    match /publicTracking/{trackingId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if request.auth != null && isAdmin();
+      allow create, update: if request.auth != null && request.auth.uid == salesmanId;
+      allow delete: if request.auth != null && request.auth.uid == salesmanId;
     }
   }
 }
+
