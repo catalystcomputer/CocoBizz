@@ -632,3 +632,24 @@ select {
 .qr-fallback { padding:20px; text-align:center; font-size:14px; }
 .delivery-estimate-card { margin:14px 0; padding:12px 14px; border-radius:12px; background:rgba(224,88,45,.08); }
 @media (max-width:600px){ .checkout-nav{flex-direction:column;} .dynamic-upi-qr{width:240px;min-height:240px;} }
+
+/* V25 order checkout improvements */
+.order-modal { padding: 0; place-items: stretch; }
+.order-modal .order-box { width: 100%; max-width: none; height: 100vh; max-height: none; border-radius: 0; padding: 34px clamp(18px, 4vw, 56px) 42px; overflow-y: auto; }
+.order-modal .order-box > .close-button { position: fixed; z-index: 20; top: 14px; right: 20px; width: 46px; height: 46px; border-radius: 50%; background: #fff; box-shadow: 0 5px 20px rgba(0,0,0,.12); font-size: 34px; line-height: 1; }
+body.order-open { overflow: hidden; }
+.order-modal .checkout-step { max-width: 900px; margin: 0 auto; }
+.upi-payment-vertical { display:flex; flex-direction:column; align-items:center; text-align:center; gap:12px; }
+.upi-qr-title { font-size: 17px; color: var(--brown); }
+.upi-qr-title b { font-size: 20px; margin-left: 4px; }
+.upi-payment-vertical .dynamic-upi-qr { width: min(330px, 82vw); min-height: min(330px, 82vw); padding: 8px; background:#fff; border:1px solid var(--border); border-radius:16px; box-shadow:0 8px 25px rgba(59,33,27,.08); }
+.upi-payment-vertical .dynamic-upi-qr img { width:100%; height:auto; max-width:100%; display:block; }
+.upi-payment-vertical .upi-payment-info { width:min(520px,100%); align-items:stretch; }
+.upi-payment-vertical .upi-pay-button { width:100%; text-decoration:none; justify-content:center; }
+.upi-payment-vertical .upi-id-row { align-items:center; }
+.qr-fallback { padding:30px 18px; color:#6f6259; background:#fffaf7; border-radius:12px; }
+@media (max-width: 600px) {
+  .order-modal .order-box { padding: 60px 14px 28px; }
+  .order-modal .order-box > .close-button { top: 10px; right: 12px; }
+  .upi-payment-vertical .dynamic-upi-qr { width:min(300px,82vw); min-height:min(300px,82vw); }
+}

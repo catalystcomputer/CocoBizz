@@ -33,7 +33,7 @@
   let knownOrderIds = new Set();
   let notificationPrimed = false;
   let orderPollTimer = null;
-  let storeSettings = { deliveryCharge: 0, freeDeliveryAbove: 0, platformFeeEnabled: false, platformFeeType: "flat", platformFeeValue: 0, upiEnabled: true, upiId: "kunalverma5555@ibl", upiName: "CocoBiz", upiQrImage: "", onlinePaymentEnabled: false, razorpayKeyId: "", deliveryRadiusKm: 25, deliveryMinDays: 7, deliveryMaxDays: 15, storeLatitude: null, storeLongitude: null };
+  let storeSettings = { deliveryCharge: 0, freeDeliveryAbove: 0, freeDeliveryRadiusKm: 10, platformFeeEnabled: false, platformFeeType: "flat", platformFeeValue: 0, upiEnabled: true, upiId: "kunalverma5555@ibl", upiName: "CocoBiz", upiQrImage: "", onlinePaymentEnabled: false, razorpayKeyId: "", deliveryRadiusKm: 0, deliveryMinDays: 7, deliveryMaxDays: 15, storeLatitude: 26.291018, storeLongitude: 87.2711 };
   let appliedCoupon = null;
   let customerLocation = null;
   const ORDER_STATUSES = [
@@ -493,7 +493,7 @@
         if (!cart[id]) delete cart[id];
         updateCart();
         renderSelectedProducts();
-        if (!Object.keys(cart).length) $("orderModal")?.classList.add("hidden");
+        if (!Object.keys(cart).length) { $("orderModal")?.classList.add("hidden"); document.body.classList.remove("order-open"); }
       });
     });
 
@@ -502,7 +502,7 @@
         delete cart[button.dataset.remove];
         updateCart();
         renderSelectedProducts();
-        if (!Object.keys(cart).length) $("orderModal")?.classList.add("hidden");
+        if (!Object.keys(cart).length) { $("orderModal")?.classList.add("hidden"); document.body.classList.remove("order-open"); }
       });
     });
   }
@@ -517,6 +517,8 @@
     renderSelectedProducts();
     setCheckoutStep(1);
     $("orderModal")?.classList.remove("hidden");
+    document.body.classList.add("order-open");
+    setTimeout(() => useMyLocation(true), 250);
   }
 
   function bindEvents() {
@@ -544,6 +546,7 @@
     document.querySelectorAll("[data-close]").forEach(button => {
       button.addEventListener("click", () => {
         $(button.dataset.close)?.classList.add("hidden");
+        if (button.dataset.close === "orderModal") document.body.classList.remove("order-open");
       });
     });
 
@@ -569,6 +572,17 @@
     $("trackOrderButton")?.addEventListener("click", () => $("trackOrderModal")?.classList.remove("hidden"));
     $("trackOrderForm")?.addEventListener("submit", trackOrder);
     $("customerPaymentMethod")?.addEventListener("change", renderOrderCharges);
+    $("upiPayButton")?.addEventListener("click", event => {
+      event.preventDefault();
+      const href = $("upiPayButton").getAttribute("href");
+      if (!href || href === "#") { alert("Pehle UPI payment option select karein."); return; }
+      try {
+        window.location.href = href;
+        setTimeout(() => {
+          if (document.visibilityState === "visible" && /Android/i.test(navigator.userAgent)) alert("UPI app open nahi hua. QR scan karke payment karein ya UPI app installed hai check karein.");
+        }, 1200);
+      } catch (_) { alert("UPI app open nahi hua. QR scan karke payment karein."); }
+    });
     $("deleteOfferButton")?.addEventListener("click", deleteOffer);
     $("offerAdminPreview")?.addEventListener("click", event => {
       const button = event.target.closest("[data-delete-offer]");
@@ -1369,7 +1383,11 @@
 
   function calculateOrderCharges(subtotal) {
     const freeAbove = Number(storeSettings.freeDeliveryAbove || 0);
-    const delivery = freeAbove > 0 && subtotal >= freeAbove ? 0 : Number(storeSettings.deliveryCharge || 0);
+    const freeRadius = Number(storeSettings.freeDeliveryRadiusKm ?? 10);
+    const withinFreeRadius = customerLocation && Number.isFinite(Number(storeSettings.storeLatitude)) && Number.isFinite(Number(storeSettings.storeLongitude))
+      ? haversineKm(Number(storeSettings.storeLatitude), Number(storeSettings.storeLongitude), Number(customerLocation.lat), Number(customerLocation.lng)) <= freeRadius
+      : false;
+    const delivery = (withinFreeRadius || (freeAbove > 0 && subtotal >= freeAbove)) ? 0 : Number(storeSettings.deliveryCharge || 0);
     const feeBase = Number(storeSettings.platformFeeValue || 0);
     const platformFee = storeSettings.platformFeeEnabled ? (storeSettings.platformFeeType === "percent" ? subtotal * feeBase / 100 : feeBase) : 0;
     const beforeCoupon = subtotal + delivery + platformFee;
@@ -1416,6 +1434,7 @@
         const uri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${name}&am=${amount}&cu=INR&tn=${note}`;
         if ($("upiIdDisplay")) $("upiIdDisplay").textContent = upiId;
         if ($("upiAmountText")) $("upiAmountText").textContent = `Pay ${money(c.grandTotal)}`;
+        if ($("upiQrAmountText")) $("upiQrAmountText").textContent = money(c.grandTotal);
         if ($("upiPayButton")) $("upiPayButton").href = uri;
         renderDynamicUpiQr(uri);
       }
@@ -1426,12 +1445,16 @@
     const box = $("dynamicUpiQr"); if (!box) return;
     box.innerHTML = "";
     const img = document.createElement("img");
-    img.className = "upi-qr";
-    img.alt = "CocoBiz UPI QR";
-    img.loading = "eager";
-    img.src = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=8&data=${encodeURIComponent(uri)}`;
+    img.className = "upi-qr"; img.alt = "CocoBiz UPI QR"; img.loading = "eager";
+    const encoded = encodeURIComponent(uri);
+    const primary = `https://quickchart.io/qr?size=360&margin=2&text=${encoded}`;
+    const secondary = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=8&data=${encoded}`;
+    img.src = primary;
     img.onerror = () => {
-      box.innerHTML = storeSettings.upiQrImage ? `<img src="${storeSettings.upiQrImage}" alt="CocoBiz UPI QR" class="upi-qr">` : `<div class="qr-fallback">QR load nahi hua. <b>Pay with UPI App</b> button use karein.</div>`;
+      if (img.dataset.retry !== "1") { img.dataset.retry = "1"; img.src = secondary; return; }
+      box.innerHTML = storeSettings.upiQrImage
+        ? `<img src="${storeSettings.upiQrImage}" alt="CocoBiz UPI QR" class="upi-qr">`
+        : `<div class="qr-fallback"><b>QR temporarily unavailable</b><br>Pay with UPI button use karein.</div>`;
     };
     box.appendChild(img);
   }
@@ -1456,6 +1479,7 @@
     storeSettings = {
       ...storeSettings,
       deliveryCharge: Math.max(0, Number($("deliveryCharge").value || 0)),
+      freeDeliveryRadiusKm: Math.max(0, Number($("freeDeliveryRadiusKm")?.value || 10)),
       freeDeliveryAbove: Math.max(0, Number($("freeDeliveryAbove").value || 0)),
       platformFeeEnabled: $("platformFeeEnabled").checked,
       platformFeeType: $("platformFeeType").value,
@@ -1466,11 +1490,11 @@
       upiQrImage: qrImage,
       onlinePaymentEnabled: $("onlinePaymentEnabled").checked,
       razorpayKeyId: $("razorpayKeyId").value.trim(),
-      deliveryRadiusKm: Math.max(0, Number($("deliveryRadiusKm")?.value || 25)),
+      deliveryRadiusKm: 0,
       deliveryMinDays: minDays,
       deliveryMaxDays: maxDays,
-      storeLatitude: $("storeLatitude")?.value === "" ? null : Number($("storeLatitude").value),
-      storeLongitude: $("storeLongitude")?.value === "" ? null : Number($("storeLongitude").value),
+      storeLatitude: $("storeLatitude")?.value === "" ? 26.291018 : Number($("storeLatitude").value),
+      storeLongitude: $("storeLongitude")?.value === "" ? 87.2711 : Number($("storeLongitude").value),
       updatedAt: Date.now()
     };
     try { await db.collection("settings").doc("store").set(storeSettings, { merge: true }); renderOrderCharges(); renderStoreSettings(); alert("Store settings save ho gayi."); }
@@ -1479,17 +1503,18 @@
 
   function renderStoreSettings() {
     if ($("deliveryCharge")) $("deliveryCharge").value = storeSettings.deliveryCharge || 0;
+    if ($("freeDeliveryRadiusKm")) $("freeDeliveryRadiusKm").value = storeSettings.freeDeliveryRadiusKm ?? 10;
     if ($("freeDeliveryAbove")) $("freeDeliveryAbove").value = storeSettings.freeDeliveryAbove || "";
     if ($("platformFeeEnabled")) $("platformFeeEnabled").checked = !!storeSettings.platformFeeEnabled;
     if ($("platformFeeType")) $("platformFeeType").value = storeSettings.platformFeeType || "flat";
     if ($("platformFeeValue")) $("platformFeeValue").value = storeSettings.platformFeeValue || 0;
     if ($("upiEnabled")) $("upiEnabled").checked = storeSettings.upiEnabled !== false;
     if ($("upiId")) $("upiId").value = storeSettings.upiId || "kunalverma5555@ibl";
-    if ($("deliveryRadiusKm")) $("deliveryRadiusKm").value = storeSettings.deliveryRadiusKm ?? 25;
+    if ($("deliveryRadiusKm")) $("deliveryRadiusKm").value = "";
     if ($("deliveryMinDays")) $("deliveryMinDays").value = storeSettings.deliveryMinDays ?? 7;
     if ($("deliveryMaxDays")) $("deliveryMaxDays").value = storeSettings.deliveryMaxDays ?? 15;
-    if ($("storeLatitude")) $("storeLatitude").value = storeSettings.storeLatitude ?? "";
-    if ($("storeLongitude")) $("storeLongitude").value = storeSettings.storeLongitude ?? "";
+    if ($("storeLatitude")) $("storeLatitude").value = storeSettings.storeLatitude ?? 26.291018;
+    if ($("storeLongitude")) $("storeLongitude").value = storeSettings.storeLongitude ?? 87.2711;
     if ($("settingsQrPreview")) $("settingsQrPreview").src = storeSettings.upiQrImage || "assets/cocobiz_upi_qr.png";
     if ($("onlinePaymentEnabled")) $("onlinePaymentEnabled").checked = !!storeSettings.onlinePaymentEnabled;
     if ($("razorpayKeyId")) $("razorpayKeyId").value = storeSettings.razorpayKeyId || "";
@@ -1547,18 +1572,19 @@
     return 2*R*Math.asin(Math.sqrt(a));
   }
 
-  function useMyLocation() {
+  function useMyLocation(silent = false) {
     if (!navigator.geolocation) { $("deliveryLocationMessage").textContent = "Is device me location support nahi hai."; return; }
-    $("deliveryLocationMessage").textContent = "Location check ho raha hai...";
+    if (!silent) $("deliveryLocationMessage").textContent = "Location check ho raha hai...";
     navigator.geolocation.getCurrentPosition(pos => {
       customerLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       const sLat=Number(storeSettings.storeLatitude), sLng=Number(storeSettings.storeLongitude);
       if (Number.isFinite(sLat) && Number.isFinite(sLng)) {
         const distance=haversineKm(sLat,sLng,customerLocation.lat,customerLocation.lng);
-        const radius=Number(storeSettings.deliveryRadiusKm||25);
-        $("deliveryLocationMessage").textContent = distance <= radius ? `Delivery available • approx. ${distance.toFixed(1)} km away` : `This location is ${distance.toFixed(1)} km away; configured radius is ${radius} km.`;
+        const freeRadius = Number(storeSettings.freeDeliveryRadiusKm ?? 10);
+        $("deliveryLocationMessage").textContent = distance <= freeRadius ? `🚚 FREE delivery • approx. ${distance.toFixed(1)} km away` : `🚚 Delivery available • ${distance.toFixed(1)} km away • Delivery charge ${money(storeSettings.deliveryCharge || 0)}`;
+        renderOrderCharges();
       } else {
-        $("deliveryLocationMessage").textContent = "Location saved. Admin Store Settings me store latitude/longitude set karne par 25 km check hoga.";
+        $("deliveryLocationMessage").textContent = "Location saved. Delivery charge will be calculated automatically.";
       }
     }, () => { $("deliveryLocationMessage").textContent = "Location permission nahi mili. Address se order continue kar sakte hain."; }, { enableHighAccuracy: true, timeout: 10000 });
   }
@@ -1573,12 +1599,6 @@
   function goToPaymentStep() {
     if (!$('customerName')?.value.trim() || !$('customerNumber')?.value.trim() || !$('customerAddress')?.value.trim() || !$('customerType')?.value) { alert("Name, mobile, address aur customer type complete karein."); return; }
     if (!/^[0-9]{10}$/.test($("customerNumber").value.trim())) { alert("10-digit mobile number enter karein."); return; }
-    const sLat=Number(storeSettings.storeLatitude), sLng=Number(storeSettings.storeLongitude);
-    if (customerLocation && Number.isFinite(sLat) && Number.isFinite(sLng)) {
-      const distance=haversineKm(sLat,sLng,customerLocation.lat,customerLocation.lng);
-      const radius=Number(storeSettings.deliveryRadiusKm||25);
-      if (radius>0 && distance>radius) { alert(`Is location par delivery available nahi hai. Configured delivery radius ${radius} km hai.`); return; }
-    }
     setCheckoutStep(2);
     renderOrderCharges();
   }
@@ -1731,6 +1751,7 @@
       $("orderForm").reset();
       appliedCoupon = null; customerLocation = null; setCheckoutStep(1);
       $("orderModal")?.classList.add("hidden");
+      document.body.classList.remove("order-open");
     } catch (error) {
       // Keep a local copy so it can be retried automatically after connectivity returns.
       localStorage.setItem(

@@ -285,7 +285,7 @@
         <form id="storeSettingsForm" class="product-form">
           <div class="form-group"><label for="deliveryCharge">Delivery charge (₹)</label><input id="deliveryCharge" type="number" min="0" step="0.01" value="0"></div>
           <div class="form-group"><label for="freeDeliveryAbove">Free delivery above (₹) <small>(optional)</small></label><input id="freeDeliveryAbove" type="number" min="0" step="0.01" placeholder="e.g. 999"></div>
-          <div class="form-group"><label for="deliveryRadiusKm">Delivery radius (km)</label><input id="deliveryRadiusKm" type="number" min="0" step="0.1" value="25"></div>
+          <div class="form-group"><label for="freeDeliveryRadiusKm">Free delivery within (km)</label><input id="freeDeliveryRadiusKm" type="number" min="0" step="0.1" value="10"><small>Customer location is within this radius → delivery automatically FREE. Beyond this distance, your normal delivery charge will apply. There is no maximum distance limit.</small></div>
           <div class="form-group"><label for="deliveryMinDays">Delivery min days</label><input id="deliveryMinDays" type="number" min="1" step="1" value="7"></div>
           <div class="form-group"><label for="deliveryMaxDays">Delivery max days</label><input id="deliveryMaxDays" type="number" min="1" step="1" value="15"></div>
           <div class="form-group"><label for="storeLatitude">Store latitude <small>(optional, for 25 km checking)</small></label><input id="storeLatitude" type="number" step="any" placeholder="e.g. 24.79"></div>
@@ -363,7 +363,7 @@
     </div>
   </div>
 
-  <div class="modal hidden" id="orderModal">
+  <div class="modal hidden order-modal" id="orderModal">
     <div class="modal-box order-box">
       <button class="close-button" data-close="orderModal">×</button>
       <p class="eyebrow">CocoBiz order</p>
@@ -422,13 +422,14 @@
         </div>
 
         <div id="upiPaymentBox" class="upi-payment-box hidden">
-          <div class="upi-payment-head"><strong>📲 Pay using UPI</strong><span id="upiAmountText"></span></div>
-          <div class="upi-payment-content">
+          <div class="upi-payment-head"><strong>📲 UPI Payment</strong><span id="upiAmountText"></span></div>
+          <div class="upi-payment-vertical">
+            <div class="upi-qr-title">Scan QR to pay <b id="upiQrAmountText"></b></div>
             <div id="dynamicUpiQr" class="upi-qr dynamic-upi-qr" aria-label="UPI QR"></div>
             <div class="upi-payment-info">
-              <div class="upi-id-row"><span>UPI ID</span><b id="upiIdDisplay">kunalverma5555@ibl</b></div>
-              <a id="upiPayButton" class="secondary-button upi-pay-button" href="#">📱 Pay with UPI App</a>
-              <small>QR scan karke ya UPI App button se payment karein. Payment ke baad UTR / Transaction ID neeche enter karein.</small>
+              <div class="upi-id-row"><span>Pay to UPI ID</span><b id="upiIdDisplay">kunalverma5555@ibl</b></div>
+              <a id="upiPayButton" class="primary-button upi-pay-button" href="#">📱 Pay with UPI</a>
+              <small>Android phone par button dabane se available UPI apps khulenge. QR scan karne par payment amount automatically set rahega.</small>
             </div>
           </div>
           <div class="form-group">

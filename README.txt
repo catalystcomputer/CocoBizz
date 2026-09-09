@@ -20,3 +20,6 @@ V22 updates:
 
 
 V23 fixes: UPI QR is embedded directly in index.html to prevent broken-image errors after deployment. Admin Store Settings navigation now opens correctly. Added QR preview inside Store Settings.
+
+
+V26 CHANGE: Maximum delivery distance limit removed. Delivery is available at any distance. Within the configured free-delivery radius (default 10 km) delivery is FREE; beyond it, the configured delivery charge applies.
