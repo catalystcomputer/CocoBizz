@@ -1,22 +1,19 @@
 CocoBiz v20
 
-Dropshipping-ready storefront update:
-- Existing CocoBiz business/admin features retained.
-- Public store updated for Gifts, Chocolates and Kitchen products.
-- Added category filters: All, Gifts, Chocolates, Kitchen.
-- Added product category field in Admin -> Products.
-- Existing products without a category are treated as Gift by default.
-- Contact email changed to help.cocobiz@yahoo.com.
-- Product costPrice can continue to be used for supplier/landed cost tracking and profit calculation.
+Added:
+1. Two-step customer checkout: customer/products/details -> payment -> confirm.
+2. Admin Settings: UPI ID + optional business QR upload; dynamic exact-amount UPI QR is generated from the UPI ID.
+3. Coupon system: admin can generate multiple percentage/fixed coupons, set minimum order, max uses, start/end validity, and delete them.
+4. Public order tracking using Order ID + mobile number. Delivery window shows 7-15 days only when customer location is within 25 km of the store location configured in Admin -> Settings.
+5. Admin can set store coordinates from the admin device's browser location permission.
+6. Tracking record is stored separately with a SHA-256 mobile hash; full mobile number is not stored in the public tracking record.
 
+Deployment:
+- Replace the website files in GitHub/Vercel with this version.
+- Deploy firestore.rules to Firebase.
+- Existing Firebase Cloud Functions remain in functions/.
 
-V22 updates:
-- PhonePe/static UPI QR integrated using provided QR image.
-- UPI ID default: kunalverma5555@ibl.
-- Customer can pay by QR or UPI App deep link and submit UTR. Admin verifies manually.
-- Platform fee can be enabled/disabled; disabled displays FREE/₹0.
-- Delivery charge + free delivery threshold remain configurable in Store Settings.
-- UPI/COD/Razorpay payment options can be enabled independently.
-
-
-V23 fixes: UPI QR is embedded directly in index.html to prevent broken-image errors after deployment. Admin Store Settings navigation now opens correctly. Added QR preview inside Store Settings.
+Important:
+- Set UPI ID in Admin -> Settings for exact-amount QR payment.
+- Set store location once in Admin -> Settings using the device location button.
+- Online UPI payment is not automatically verified by this client-only checkout; admin should mark payment received after confirming payment.
