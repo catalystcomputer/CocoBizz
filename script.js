@@ -589,12 +589,16 @@
       if (prefill.mobile && $("trackMobile")) $("trackMobile").value = String(prefill.mobile).replace(/\D/g, "").slice(-10);
       setTimeout(() => $("trackOrderId")?.focus(), 50);
     };
-    $("trackOrderButton")?.addEventListener("click", openTrackOrder);
-    // Delegated fallback: keeps Track Order working even if the header is re-rendered.
-    document.addEventListener("click", event => {
-      if (event.target?.closest?.("#trackOrderButton")) openTrackOrder();
-    });
+    $("trackOrderButton")?.addEventListener("click", openTrackOrder, true);
+    // Direct global fallback: Track Order must open from the main page without visiting Orders.
     window.openCocoBizTrackOrder = openTrackOrder;
+    window.cocoOpenTrackOrder = openTrackOrder;
+    document.addEventListener("click", event => {
+      if (event.target?.closest?.("#trackOrderButton")) {
+        event.preventDefault();
+        openTrackOrder();
+      }
+    }, true);
     $("trackOrderForm")?.addEventListener("submit", trackOrder);
     $("customerPaymentMethod")?.addEventListener("change", renderOrderCharges);
     $("upiPayButton")?.addEventListener("click", event => {
@@ -1836,7 +1840,7 @@
       // a short UI hand-off rather than pretending WhatsApp confirmed delivery.
       try { window.open(waUrl, "_blank", "noopener,noreferrer"); } catch {}
 
-      setTimeout(() => showOrderSuccess(data.customer.number, clientId), 500);
+      showOrderSuccess(data.customer.number, clientId);
 
       cart = {};
       updateCart();
