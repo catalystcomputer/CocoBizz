@@ -1528,18 +1528,62 @@
     return `<div class="status-timeline">${visible.map((x,i)=>{ const done = idx >= ORDER_STATUSES.findIndex(y=>y[0]===x[0]); return `<div class="timeline-step ${done?"done":""}"><span>${done?"✓":i+1}</span><small>${x[1]}</small></div>`; }).join("")}</div>${["cancelled","returned"].includes(current)?`<div class="exception-status">${current === "cancelled" ? "❌ Order Cancelled" : "↩ Order Returned"}</div>`:""}`;
   }
 
+  async function hashTrackingMobile(mobile) {
+    const text = String(mobile || '').replace(/\D/g, '');
+    if (window.crypto?.subtle) {
+      const bytes = new TextEncoder().encode(text);
+      const digest = await crypto.subtle.digest('SHA-256', bytes);
+      return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    let h = 2166136261;
+    for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+    return String(h >>> 0);
+  }
+
+  async function syncPublicTracking(order, extra = {}) {
+    if (!db || !order?.clientId) return;
+    try {
+      const mobileHash = order.mobileHash || await hashTrackingMobile(order.customer?.number || '');
+      const payload = {
+        clientId: order.clientId,
+        mobileHash,
+        status: extra.status ?? order.status ?? 'pending',
+        deliveryEstimate: extra.deliveryEstimate ?? order.deliveryEstimate ?? '7–15 days',
+        deliveryDistanceKm: extra.deliveryDistanceKm ?? order.deliveryDistanceKm ?? null,
+        total: Number(extra.netTotal ?? extra.total ?? order.netTotal ?? order.total ?? 0),
+        updatedAt: extra.updatedAt ?? Date.now(),
+        createdAt: order.createdAt || Date.now()
+      };
+      await db.collection('publicOrderTracking').doc(String(order.clientId)).set(payload, { merge: true });
+    } catch (e) {
+      console.warn('Public tracking sync failed:', e?.message || e);
+    }
+  }
+
   async function trackOrder(event) {
     event.preventDefault();
-    const id = $("trackOrderId").value.trim(); const mobile = $("trackMobile").value.trim();
+    const id = $("trackOrderId").value.trim();
+    const mobile = $("trackMobile").value.trim();
     const box = $("trackOrderResult");
+    if (!id || !mobile) return;
     box.innerHTML = "Searching...";
     try {
-      const snap = await db.collection("orders").where("clientId", "==", id).limit(1).get();
-      if (snap.empty) { box.innerHTML = `<p class="modal-subtitle">Order nahi mila. Order ID check karein.</p>`; return; }
-      const order = { id: snap.docs[0].id, ...snap.docs[0].data() };
-      if (String(order.customer?.number || "") !== mobile) { box.innerHTML = `<p class="modal-subtitle">Order ID aur mobile number match nahi hua.</p>`; return; }
-      box.innerHTML = `<div class="tracking-card"><div class="order-heading-row"><strong>#${escapeHtml(order.clientId || order.id)}</strong><span class="status-badge">${escapeHtml(statusLabel(order.status))}</span></div>${statusTimeline(order)}<div class="delivery-estimate-card">🚚 <b>Estimated Delivery</b><br>${escapeHtml(order.deliveryEstimate || "7–15 days")}${order.deliveryDistanceKm != null ? `<br><small>Approx. distance: ${Number(order.deliveryDistanceKm).toFixed(1)} km</small>` : ""}</div><div class="order-grand-total">Total: <strong>${money(order.netTotal ?? order.total ?? 0)}</strong><br><small>Last updated: ${new Date(order.updatedAt || order.createdAt || Date.now()).toLocaleString("en-IN")}</small></div></div>`;
-    } catch(e) { box.innerHTML = `<p class="modal-subtitle">Tracking failed: ${escapeHtml(errorText(e))}</p>`; }
+      const snap = await db.collection("publicOrderTracking").doc(id).get();
+      if (!snap.exists) {
+        box.innerHTML = `<p class="modal-subtitle">Order nahi mila. Order ID check karein.</p>`;
+        return;
+      }
+      const tracking = snap.data();
+      const mobileHash = await hashTrackingMobile(mobile);
+      if (tracking.mobileHash && tracking.mobileHash !== mobileHash) {
+        box.innerHTML = `<p class="modal-subtitle">Order ID aur mobile number match nahi hua.</p>`;
+        return;
+      }
+      box.innerHTML = `<div class="tracking-card"><div class="order-heading-row"><strong>#${escapeHtml(tracking.clientId || id)}</strong><span class="status-badge">${escapeHtml(statusLabel(tracking.status))}</span></div>${statusTimeline(tracking)}<div class="delivery-estimate-card">🚚 <b>Estimated Delivery</b><br>${escapeHtml(tracking.deliveryEstimate || "7–15 days")}${tracking.deliveryDistanceKm != null ? `<br><small>Approx. distance: ${Number(tracking.deliveryDistanceKm).toFixed(1)} km</small>` : ""}</div><div class="order-grand-total">Total: <strong>${money(tracking.total || 0)}</strong><br><small>Last updated: ${new Date(tracking.updatedAt || tracking.createdAt || Date.now()).toLocaleString("en-IN")}</small></div></div>`;
+    } catch(e) {
+      console.error('Track order error:', e);
+      box.innerHTML = `<p class="modal-subtitle">Tracking failed: ${escapeHtml(errorText(e))}</p>`;
+    }
   }
 
   async function openOnlinePayment(orderData, amount) {
@@ -1705,7 +1749,10 @@
     data.status = publicSalesmanId ? "salesman_pending" : "pending";
 
     const saveCloud = async () => {
-      await db.collection("orders").add(data);
+      data.mobileHash = await hashTrackingMobile(data.customer.number);
+      const ref = await db.collection("orders").add(data);
+      await syncPublicTracking(data);
+      return ref;
     };
 
     try {
@@ -1717,7 +1764,11 @@
           const payment = await openOnlinePayment(data, total);
           data.paymentStatus = "paid"; data.paidAmount = total; data.dueAmount = 0; data.paymentId = payment.razorpay_payment_id; data.status = "accepted"; data.updatedAt = Date.now();
           const ref = (await db.collection("orders").where("clientId", "==", clientId).limit(1).get()).docs[0];
-          if (ref) await ref.ref.update({ paymentStatus: "paid", paidAmount: total, dueAmount: 0, paymentId: data.paymentId, status: "accepted", acceptedAt: Date.now(), updatedAt: Date.now() });
+          if (ref) {
+            const onlinePatch = { paymentStatus: "paid", paidAmount: total, dueAmount: 0, paymentId: data.paymentId, status: "accepted", acceptedAt: Date.now(), updatedAt: Date.now() };
+            await ref.ref.update(onlinePatch);
+            await syncPublicTracking({ ...data, ...onlinePatch, netTotal: total });
+          }
         } catch (paymentError) {
           alert(`Online payment complete nahi hua: ${errorText(paymentError)}\n\nOrder ko COD/pending ke roop me rakha gaya hai.`);
         }
@@ -1895,7 +1946,9 @@
     const order = orders.find(o => o.id === orderId); if (!order || currentRole !== "admin") return;
     try {
       if (status === "accepted" && !["accepted","received","packed","shipped","out_for_delivery","delivered"].includes(order.status)) await adjustStockForOrder(order, -1);
-      await db.collection("orders").doc(orderId).update({ status, updatedAt: Date.now(), ...(status === "accepted" ? { acceptedAt: Date.now() } : {}), ...(status === "delivered" ? { deliveredAt: Date.now() } : {}) });
+      const statusPatch = { status, updatedAt: Date.now(), ...(status === "accepted" ? { acceptedAt: Date.now() } : {}), ...(status === "delivered" ? { deliveredAt: Date.now() } : {}) };
+      await db.collection("orders").doc(orderId).update(statusPatch);
+      await syncPublicTracking({ ...order, ...statusPatch });
       await loadOrders(); renderOrders(); renderSalesDashboard();
     } catch(e) { alert(`Status update nahi hua: ${errorText(e)}`); }
   }
@@ -1911,7 +1964,9 @@
     } else if (currentRole !== "admin") return;
     try {
       if (status === "accepted" && !["accepted","received"].includes(order.status)) await adjustStockForOrder(order, -1);
-      await db.collection("orders").doc(orderId).update({ status, salesmanAcceptedAt: status === "pending_admin" ? Date.now() : (order.salesmanAcceptedAt || null), acceptedAt: status === "accepted" ? Date.now() : (order.acceptedAt || null), updatedAt: Date.now() });
+      const statusPatch = { status, salesmanAcceptedAt: status === "pending_admin" ? Date.now() : (order.salesmanAcceptedAt || null), acceptedAt: status === "accepted" ? Date.now() : (order.acceptedAt || null), updatedAt: Date.now() };
+      await db.collection("orders").doc(orderId).update(statusPatch);
+      await syncPublicTracking({ ...order, ...statusPatch });
       await loadOrders(); renderOrders(); renderSalesDashboard(); if(currentRole === "admin") renderSalesmen();
       alert(message);
     } catch(error) { alert(`Order status update नहीं हुआ: ${errorText(error)}`); }
@@ -1957,15 +2012,9 @@
     const paymentHistory = [...(order.paymentHistory || []), paymentEntry];
 
     try {
-      await db.collection("orders").doc(orderId).update({
-        paidAmount,
-        dueAmount,
-        paymentReceived: true,
-        paymentReceivedAt: Date.now(),
-        paymentHistory,
-        status: dueAmount === 0 ? "received" : (order.status || "accepted"),
-        updatedAt: Date.now()
-      });
+      const paymentPatch = { paidAmount, dueAmount, paymentReceived: true, paymentReceivedAt: Date.now(), paymentHistory, status: dueAmount === 0 ? "received" : (order.status || "accepted"), updatedAt: Date.now() };
+      await db.collection("orders").doc(orderId).update(paymentPatch);
+      await syncPublicTracking({ ...order, ...paymentPatch, netTotal });
       await loadOrders();
       renderOrders();
       renderSalesDashboard();
@@ -2014,16 +2063,9 @@
     const status = dueAmount === 0 && paidAmount > 0 ? "received" : "accepted";
 
     try {
-      await db.collection("orders").doc(orderId).update({
-        paymentHistory: newHistory,
-        paidAmount,
-        dueAmount,
-        creditAmount,
-        paymentReceived: paidAmount > 0,
-        paymentReceivedAt: paidAmount > 0 ? (newHistory[newHistory.length - 1]?.timestamp || null) : null,
-        status,
-        updatedAt: Date.now()
-      });
+      const undoPatch = { paymentHistory: newHistory, paidAmount, dueAmount, creditAmount, paymentReceived: paidAmount > 0, paymentReceivedAt: paidAmount > 0 ? (newHistory[newHistory.length - 1]?.timestamp || null) : null, status, updatedAt: Date.now() };
+      await db.collection("orders").doc(orderId).update(undoPatch);
+      await syncPublicTracking({ ...order, ...undoPatch, netTotal });
       await loadOrders();
       renderOrders();
       renderSalesDashboard();
@@ -2235,6 +2277,7 @@
         updatedAt: Date.now()
       });
       await db.collection("orders").doc(orderId).update(returnUpdate);
+      await syncPublicTracking({ ...order, ...returnUpdate, netTotal });
       // Returned quantity is added back to tracked stock.
       const trackedProduct = products.find(p => p.id === item.id || p.id === productId);
       if (trackedProduct?.stock != null && trackedProduct.id) {

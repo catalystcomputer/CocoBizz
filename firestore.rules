@@ -54,6 +54,15 @@ service cloud.firestore {
       );
     }
 
+
+    // Public, non-sensitive order tracking record. Full order/customer data stays private.
+    match /publicOrderTracking/{trackingId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if true;
+      allow update, delete: if request.auth != null;
+    }
+
     match /publicSalesmen/{salesmanId} {
       allow read: if true;
       allow create, update: if request.auth != null && request.auth.uid == salesmanId;

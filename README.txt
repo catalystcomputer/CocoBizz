@@ -23,3 +23,11 @@ V23 fixes: UPI QR is embedded directly in index.html to prevent broken-image err
 
 
 V26 CHANGE: Maximum delivery distance limit removed. Delivery is available at any distance. Within the configured free-delivery radius (default 10 km) delivery is FREE; beyond it, the configured delivery charge applies.
+
+
+V27 TRACK ORDER FIX
+- Customer tracking now reads a dedicated publicOrderTracking/{OrderID} document, so it works without admin login.
+- Mobile number is stored only as a SHA-256 hash for the tracking check.
+- New orders automatically create their tracking record.
+- Admin status/payment/return changes sync to the public tracking record.
+- IMPORTANT: deploy the updated Firestore rules before testing Track Order. Existing orders created before V27 may need to be recreated or synced by admin code.
