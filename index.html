@@ -9,6 +9,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Track Order: works even if the page's JavaScript has not loaded yet. */
+    #trackOrderModal:target { display: grid !important; z-index: 99999 !important; }
+  </style>
 </head>
 <body>
   <header class="site-header">
@@ -17,7 +21,7 @@
       <span>Coco<em>Biz</em></span>
     </a>
     <div class="header-actions">
-      <button type="button" class="secondary-button track-header-button" id="trackOrderButton" onclick="var m=document.getElementById('trackOrderModal'); if(m){document.getElementById('adminModal')?.classList.add('hidden');document.getElementById('orderModal')?.classList.add('hidden');document.getElementById('orderSuccessModal')?.classList.add('hidden');m.classList.remove('hidden');m.style.display='grid';m.style.zIndex='99999';m.setAttribute('aria-hidden','false');setTimeout(function(){document.getElementById('trackOrderId')?.focus();},50);} return false;">Track Order</button>
+      <a class="secondary-button track-header-button" id="trackOrderButton" href="#trackOrderModal" role="button">Track Order</a>
       <button class="order-button" id="openOrderButton">Order <span id="cartCount">0</span></button>
       <button class="admin-button hidden" id="adminButton" aria-hidden="true" tabindex="-1">Admin Panel</button>
     </div>
