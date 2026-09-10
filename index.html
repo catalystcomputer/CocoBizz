@@ -16,9 +16,14 @@
       <span class="logo-mark">✦</span>
       <span>Coco<em>Biz</em></span>
     </a>
+    <nav class="store-nav" aria-label="Store navigation">
+      <button type="button" class="nav-link active" id="homeNavButton">Home</button>
+      <button type="button" class="nav-link" id="wishlistNavButton">♡ Wishlist <span id="wishlistCount">0</span></button>
+      <button type="button" class="nav-link" id="myOrdersButton">My Orders</button>
+    </nav>
     <div class="header-actions">
       <button type="button" class="secondary-button track-header-button" id="trackOrderButton" onclick="window.cocoOpenTrackOrder && window.cocoOpenTrackOrder(); return false;">Track Order</button>
-      <button class="order-button" id="openOrderButton">Order <span id="cartCount">0</span></button>
+      <button class="order-button" id="openOrderButton">🛒 Cart <span id="cartCount">0</span></button>
       <button class="admin-button hidden" id="adminButton" aria-hidden="true" tabindex="-1">Admin Panel</button>
     </div>
   </header>
@@ -46,7 +51,28 @@
       </div>
     </section>
 
-    <section class="products-section">
+    <section class="store-benefits" aria-label="Shopping benefits">
+      <div><strong>🚚 Easy Delivery</strong><span>Delivery estimate checkout par</span></div>
+      <div><strong>💳 Secure Payment</strong><span>UPI, COD & online payment</span></div>
+      <div><strong>🔎 Easy Search</strong><span>Find products quickly</span></div>
+      <div><strong>📦 Order Tracking</strong><span>Track with Order ID + mobile</span></div>
+    </section>
+
+    <section class="catalog-toolbar" aria-label="Product sorting and filters">
+      <div><strong id="resultCount">0 products</strong><span id="filterSummary">All products</span></div>
+      <div class="toolbar-actions">
+        <select id="sortProducts" aria-label="Sort products">
+          <option value="featured">Sort: Featured</option>
+          <option value="priceLow">Price: Low to High</option>
+          <option value="priceHigh">Price: High to Low</option>
+          <option value="discount">Best Discount</option>
+          <option value="newest">Newest</option>
+        </select>
+        <button type="button" class="secondary-button" id="clearFiltersButton">Clear Filters</button>
+      </div>
+    </section>
+
+    <section class="products-section" id="shopProducts">
       <div class="product-grid" id="productGrid"></div>
       <p class="empty-message" id="emptyMessage">No products available yet.</p>
     </section>
@@ -354,6 +380,32 @@
     </div>
   </div>
 
+  <div class="modal hidden" id="productDetailModal">
+    <div class="modal-box product-detail-box">
+      <button class="close-button" data-close="productDetailModal">×</button>
+      <div id="productDetailBody"></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="wishlistModal">
+    <div class="modal-box admin-box">
+      <button class="close-button" data-close="wishlistModal">×</button>
+      <p class="eyebrow">CocoBiz</p><h2>My Wishlist ❤️</h2>
+      <div id="wishlistBody" class="wishlist-grid"></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="myOrdersModal">
+    <div class="modal-box admin-box">
+      <button class="close-button" data-close="myOrdersModal">×</button>
+      <p class="eyebrow">CocoBiz</p><h2>My Orders</h2>
+      <p class="modal-subtitle">Is device/browser par save kiye gaye recent orders.</p>
+      <div id="myOrdersBody" class="my-orders-list"></div>
+    </div>
+  </div>
+
+  <div id="cocoToast" class="coco-toast" role="status" aria-live="polite"></div>
+
   <div class="modal hidden offer-customer-modal" id="offerModal">
     <div class="modal-box offer-box">
       <button class="close-button" data-close="offerModal" aria-label="Close offer">×</button>
@@ -384,7 +436,16 @@
 
         <div class="form-group">
           <label for="customerAddress">Delivery address</label>
-          <textarea id="customerAddress" rows="3" required></textarea>
+          <textarea id="customerAddress" rows="3" required placeholder="House/flat, street, landmark"></textarea>
+        </div>
+        <div class="checkout-grid-2">
+          <div class="form-group"><label for="customerCity">City / District</label><input id="customerCity" placeholder="e.g. Dhanbad" required></div>
+          <div class="form-group"><label for="customerPincode">PIN code</label><input id="customerPincode" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="6-digit PIN" required></div>
+        </div>
+        <div class="address-type-row">
+          <label><input type="radio" name="addressType" value="Home" checked> Home</label>
+          <label><input type="radio" name="addressType" value="Work"> Work</label>
+          <span id="deliveryEstimatePreview">📦 Delivery estimate checkout par</span>
         </div>
 
         <div class="form-group delivery-location-group">
@@ -489,7 +550,7 @@
         <span class="logo-mark">✦</span>
         <span>Coco<em>Biz</em></span>
       </span>
-      <span class="footer-tagline">Quality chocolates for every occasion.</span>
+      <span class="footer-tagline">Gifts, chocolates & useful kitchen products for every occasion.</span>
     </div>
 
     <div class="contact-details">

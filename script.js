@@ -20,6 +20,8 @@
   let cart = {};
   let searchTerm = "";
   let activeCategory = "all";
+  let sortProductsBy = "featured";
+  let wishlistIds = JSON.parse(localStorage.getItem("cocobizWishlist") || "[]");
   let selfSaleItems = [];
   let currentRole = "admin";
   let currentProfile = null;
@@ -377,53 +379,41 @@
   function renderProducts() {
     const grid = $("productGrid");
     if (!grid) return;
-
-    const visibleProducts = products.filter(product => {
+    let visibleProducts = products.filter(product => {
       const haystack = `${product.name || ""} ${product.description || ""}`.toLowerCase();
       const category = String(product.category || "gift").toLowerCase();
-      const matchesSearch = !searchTerm || haystack.includes(searchTerm);
-      const matchesCategory = activeCategory === "all" || category === activeCategory;
-      return matchesSearch && matchesCategory;
+      return (!searchTerm || haystack.includes(searchTerm)) && (activeCategory === "all" || category === activeCategory);
     });
-
+    const priceOf = p => publicRate(p);
+    if (sortProductsBy === "priceLow") visibleProducts.sort((a,b)=>priceOf(a)-priceOf(b));
+    if (sortProductsBy === "priceHigh") visibleProducts.sort((a,b)=>priceOf(b)-priceOf(a));
+    if (sortProductsBy === "discount") visibleProducts.sort((a,b)=>((Number(b.actualPrice)-priceOf(b))/Math.max(1,Number(b.actualPrice))) - ((Number(a.actualPrice)-priceOf(a))/Math.max(1,Number(a.actualPrice))));
+    if (sortProductsBy === "newest") visibleProducts.sort((a,b)=>Number(b.createdAt||0)-Number(a.createdAt||0));
     $("emptyMessage")?.classList.toggle("hidden", visibleProducts.length > 0);
-    $("emptyMessage").textContent = visibleProducts.length ? "" : (products.length ? "No matching products found." : "No products available yet.");
-
-    grid.innerHTML = visibleProducts.map(product => `
-      <article class="product-card">
-        <img src="${product.image || placeholderImage()}"
-             alt="${escapeHtml(product.name)}">
-
+    if ($("resultCount")) $("resultCount").textContent = `${visibleProducts.length} product${visibleProducts.length===1?'':'s'}`;
+    if ($("filterSummary")) $("filterSummary").textContent = `${activeCategory === "all" ? "All categories" : activeCategory[0].toUpperCase()+activeCategory.slice(1)}${searchTerm ? ` • Search: ${searchTerm}` : ""}`;
+    grid.innerHTML = visibleProducts.map(product => {
+      const rate=priceOf(product), actual=Number(product.actualPrice||0);
+      const discount=actual>rate ? Math.round((actual-rate)*100/Math.max(1,actual)) : 0;
+      const wish=wishlistIds.includes(product.id);
+      const outOfStock=product.stock!=null && Number(product.stock)<=0;
+      return `<article class="product-card">
+        <button type="button" class="wishlist-button ${wish?'active':''}" data-wishlist="${escapeHtml(product.id)}" aria-label="${wish?'Remove from':'Add to'} wishlist">${wish?'♥':'♡'}</button>
+        <img src="${product.image || placeholderImage()}" alt="${escapeHtml(product.name)}" data-product-detail="${escapeHtml(product.id)}">
         <div class="product-content">
           <div class="product-category-badge">${product.category === "chocolate" ? "🍫 Chocolate" : product.category === "kitchen" ? "🍳 Kitchen" : "🎁 Gift"}</div>
-          <h3>${escapeHtml(product.name)}</h3>
-          <p>${escapeHtml(product.description)}</p>
-
-          <div class="price">
-            <strong>${money(publicRate(product))}</strong>
-            ${
-              Number(product.actualPrice) > Number(product.salePrice)
-                ? `<span class="old-price">${money(product.actualPrice)}</span>`
-                : ""
-            }
-          </div>
-          ${product.stock != null ? `<div class="stock-label ${Number(product.stock) <= 10 ? "stock-low" : ""}">${Number(product.stock) > 0 ? `${Number(product.stock)} in stock` : "Out of stock"}</div>` : ""}
-
-          <button class="primary-button add-cart-button"
-                  data-id="${escapeHtml(product.id)}" ${product.stock != null && Number(product.stock) <= 0 ? "disabled" : ""}>
-            ${product.stock != null && Number(product.stock) <= 0 ? "Out of Stock" : "Add to Order"}
-          </button>
+          <h3 data-product-detail="${escapeHtml(product.id)}">${escapeHtml(product.name)}</h3>
+          <p>${escapeHtml(product.description || "Quality product from CocoBiz.")}</p>
+          <div class="product-badge-row"><span class="price"><strong>${money(rate)}</strong>${actual>rate?`<span class="old-price">${money(actual)}</span>`:""}</span>${discount?`<span class="discount-badge">${discount}% OFF</span>`:""}</div>
+          ${product.stock != null ? `<div class="stock-label ${Number(product.stock)<=10?'stock-low':''}">${Number(product.stock)>0 ? `${Number(product.stock)} in stock` : "Out of stock"}</div>` : `<div class="stock-label">Ready to order</div>`}
+          <div class="form-actions product-card-actions"><button class="secondary-button view-product-button" type="button" data-product-detail="${escapeHtml(product.id)}">View Details</button><button class="primary-button add-cart-button" data-id="${escapeHtml(product.id)}" ${outOfStock?'disabled':''}>${outOfStock?'Out of Stock':'Add to Cart'}</button></div>
         </div>
-      </article>
-    `).join("");
-
-    grid.querySelectorAll(".add-cart-button").forEach(button => {
-      button.addEventListener("click", () => {
-        const id = button.dataset.id;
-        cart[id] = Number(cart[id] || 0) + 1;
-        updateCart();
-      });
-    });
+      </article>`;
+    }).join("");
+    grid.querySelectorAll(".add-cart-button").forEach(button=>button.addEventListener("click",()=>{const id=button.dataset.id;cart[id]=Number(cart[id]||0)+1;updateCart();showCocoToast("Added to cart 🛒");}));
+    grid.querySelectorAll("[data-product-detail]").forEach(el=>el.addEventListener("click",()=>openProductDetail(el.dataset.productDetail)));
+    grid.querySelectorAll("[data-wishlist]").forEach(el=>el.addEventListener("click",()=>toggleWishlist(el.dataset.wishlist)));
+    updateWishlistCount();
   }
 
   function updateCart() {
@@ -527,6 +517,14 @@
     setTimeout(() => useMyLocation(true), 250);
   }
 
+  function showCocoToast(message){const t=$("cocoToast");if(!t)return;t.textContent=message;t.classList.add("show");clearTimeout(window.__cocoToastTimer);window.__cocoToastTimer=setTimeout(()=>t.classList.remove("show"),1800);}
+  function updateWishlistCount(){if($("wishlistCount"))$("wishlistCount").textContent=wishlistIds.length;}
+  function toggleWishlist(id){if(wishlistIds.includes(id))wishlistIds=wishlistIds.filter(x=>x!==id);else wishlistIds=[...wishlistIds,id];localStorage.setItem("cocobizWishlist",JSON.stringify(wishlistIds));renderProducts();renderWishlist();showCocoToast(wishlistIds.includes(id)?"Added to wishlist ❤️":"Removed from wishlist");}
+  function openProductDetail(id){const p=products.find(x=>x.id===id);if(!p)return;const rate=publicRate(p),actual=Number(p.actualPrice||0),discount=actual>rate?Math.round((actual-rate)*100/Math.max(1,actual)):0;const box=$("productDetailBody");if(!box)return;box.innerHTML=`<div class="product-detail-layout"><img class="product-detail-image" src="${p.image||placeholderImage()}" alt="${escapeHtml(p.name)}"><div class="product-detail-info"><div class="product-category-badge">${p.category==='chocolate'?'🍫 Chocolate':p.category==='kitchen'?'🍳 Kitchen':'🎁 Gift'}</div><h2>${escapeHtml(p.name)}</h2><div><span class="detail-price">${money(rate)}</span>${actual>rate?`<span class="detail-old">${money(actual)}</span>`:''}</div>${discount?`<div class="detail-save">You save ${discount}% on this product</div>`:''}<p class="detail-description">${escapeHtml(p.description||'Quality product from CocoBiz.')}</p><div class="detail-meta"><div>🚚 <strong>Delivery:</strong> ${formatDeliveryRange(Date.now())}</div><div>🔐 <strong>Payment:</strong> UPI, COD${storeSettings.onlinePaymentEnabled?', Online':''}</div><div>📦 <strong>Stock:</strong> ${p.stock==null?'Available':Number(p.stock)>0?Number(p.stock)+' available':'Out of stock'}</div></div><div class="form-actions"><button class="secondary-button" type="button" onclick="document.getElementById('productDetailModal').classList.add('hidden')">Close</button><button class="primary-button" id="detailAddCart" type="button" ${p.stock!=null&&Number(p.stock)<=0?'disabled':''}>Add to Cart</button></div></div></div>`;$("productDetailModal")?.classList.remove("hidden");$("detailAddCart")?.addEventListener("click",()=>{cart[id]=Number(cart[id]||0)+1;updateCart();showCocoToast("Added to cart 🛒");$("productDetailModal")?.classList.add("hidden");});}
+  function renderWishlist(){const box=$("wishlistBody");if(!box)return;const items=wishlistIds.map(id=>products.find(p=>p.id===id)).filter(Boolean);box.innerHTML=items.length?items.map(p=>`<div class="wishlist-item"><img src="${p.image||placeholderImage()}" alt="${escapeHtml(p.name)}"><h3>${escapeHtml(p.name)}</h3><strong>${money(publicRate(p))}</strong><div class="wishlist-actions"><button class="secondary-button" data-wish-view="${escapeHtml(p.id)}">View</button><button class="primary-button" data-wish-cart="${escapeHtml(p.id)}">Add to Cart</button></div></div>`).join(""): '<p class="modal-subtitle">Wishlist abhi empty hai.</p>';box.querySelectorAll('[data-wish-view]').forEach(b=>b.onclick=()=>openProductDetail(b.dataset.wishView));box.querySelectorAll('[data-wish-cart]').forEach(b=>b.onclick=()=>{const id=b.dataset.wishCart;cart[id]=Number(cart[id]||0)+1;updateCart();showCocoToast('Added to cart 🛒');});}
+  function renderMyOrders(){const box=$("myOrdersBody");if(!box)return;const list=JSON.parse(localStorage.getItem('cocobizMyOrders')||'[]');box.innerHTML=list.length?list.slice(0,20).map(o=>`<div class="my-order-card"><div class="order-head"><strong>${escapeHtml(o.id)}</strong><span class="status-badge">${escapeHtml(o.status||'Order Placed')}</span></div><small>${escapeHtml(o.date||'')} • ${money(o.total||0)}</small><div class="form-actions" style="margin-top:10px"><button class="primary-button" data-my-track="${escapeHtml(o.id)}">Track Order</button></div></div>`).join(''):'<p class="modal-subtitle">Abhi is device par koi order saved nahi hai. Order place karne ke baad yahan dikhega.</p>';box.querySelectorAll('[data-my-track]').forEach(b=>b.onclick=()=>{ $("myOrdersModal")?.classList.add('hidden'); window.cocoOpenTrackOrder?.({orderId:b.dataset.myTrack}); });}
+  function saveLocalCustomerOrder(order){const list=JSON.parse(localStorage.getItem('cocobizMyOrders')||'[]');const next=[{id:order.clientId,total:order.total,date:order.date,status:'Order Placed'},...list.filter(x=>x.id!==order.clientId)].slice(0,20);localStorage.setItem('cocobizMyOrders',JSON.stringify(next));}
+
   function bindEvents() {
     $("openOrderButton")?.addEventListener("click", openOrderModal);
     $("bottomOrderButton")?.addEventListener("click", openOrderModal);
@@ -534,6 +532,11 @@
       searchTerm = event.target.value.trim().toLowerCase();
       renderProducts();
     });
+    $("sortProducts")?.addEventListener("change", event => { sortProductsBy=event.target.value; renderProducts(); });
+    $("clearFiltersButton")?.addEventListener("click",()=>{ searchTerm="";activeCategory="all";sortProductsBy="featured";if($("productSearch"))$("productSearch").value="";if($("sortProducts"))$("sortProducts").value="featured";document.querySelectorAll(".category-filter").forEach(b=>b.classList.toggle("active",b.dataset.category==="all"));renderProducts(); });
+    $("homeNavButton")?.addEventListener("click",()=>window.scrollTo({top:0,behavior:"smooth"}));
+    $("wishlistNavButton")?.addEventListener("click",()=>{renderWishlist();$("wishlistModal")?.classList.remove("hidden");});
+    $("myOrdersButton")?.addEventListener("click",()=>{renderMyOrders();$("myOrdersModal")?.classList.remove("hidden");});
 
     document.querySelectorAll(".category-filter").forEach(button => {
       button.addEventListener("click", () => {
@@ -1681,9 +1684,11 @@
   }
 
   function goToPaymentStep() {
-    if (!$('customerName')?.value.trim() || !$('customerNumber')?.value.trim() || !$('customerAddress')?.value.trim() || !$('customerType')?.value) { alert("Name, mobile, address aur customer type complete karein."); return; }
+    if (!$('customerName')?.value.trim() || !$('customerNumber')?.value.trim() || !$('customerAddress')?.value.trim() || !$('customerCity')?.value.trim() || !$('customerPincode')?.value.trim() || !$('customerType')?.value) { alert("Name, mobile, address aur customer type complete karein."); return; }
     if (!/^[0-9]{10}$/.test($("customerNumber").value.trim())) { alert("10-digit mobile number enter karein."); return; }
+    if (!/^[0-9]{6}$/.test($("customerPincode").value.trim())) { alert("6-digit PIN code enter karein."); return; }
     setCheckoutStep(2);
+    if ($("deliveryEstimatePreview")) $("deliveryEstimatePreview").textContent = `📦 Expected delivery: ${formatDeliveryRange(Date.now())}`;
     renderOrderCharges();
   }
 
@@ -1760,7 +1765,10 @@
       customer: {
         name: $("customerName").value.trim(),
         number: $("customerNumber").value.trim(),
-        address: $("customerAddress").value.trim(),
+        address: `${$("customerAddress").value.trim()}, ${$("customerCity").value.trim()}, PIN ${$("customerPincode").value.trim()}`,
+        city: $("customerCity").value.trim(),
+        pincode: $("customerPincode").value.trim(),
+        addressType: document.querySelector('input[name="addressType"]:checked')?.value || "Home",
         type: $("customerType").value
       },
       items,
@@ -1848,6 +1856,7 @@
       try { window.open(waUrl, "_blank", "noopener,noreferrer"); } catch {}
 
       showOrderSuccess(data.customer.number, clientId);
+      saveLocalCustomerOrder(data);
 
       cart = {};
       updateCart();
