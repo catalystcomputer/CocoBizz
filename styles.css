@@ -663,3 +663,6 @@ body.order-open { overflow: hidden; }
 
 /* CocoBiz Track Order button: no underline */
 #trackOrderButton { text-decoration: none !important; display: inline-flex !important; align-items: center; justify-content: center; cursor: pointer; }
+
+/* Track Order button only */
+#trackOrderButton { text-decoration: none !important; cursor: pointer !important; pointer-events: auto !important; }

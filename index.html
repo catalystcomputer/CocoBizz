@@ -21,7 +21,7 @@
       <span>Coco<em>Biz</em></span>
     </a>
     <div class="header-actions">
-      <button type="button" class="secondary-button track-header-button" id="trackOrderButton">Track Order</button>
+      <button type="button" class="secondary-button track-header-button" id="trackOrderButton" onclick="(function(){var m=document.getElementById('trackOrderModal');if(!m)return false;['adminModal','orderModal','orderSuccessModal'].forEach(function(id){var x=document.getElementById(id);if(x)x.classList.add('hidden');});m.classList.remove('hidden');m.style.setProperty('display','grid','important');m.style.setProperty('z-index','999999','important');m.setAttribute('aria-hidden','false');var i=document.getElementById('trackOrderId');if(i)setTimeout(function(){i.focus();},50);return false;})()">Track Order</button>
       <button class="order-button" id="openOrderButton">Order <span id="cartCount">0</span></button>
       <button class="admin-button hidden" id="adminButton" aria-hidden="true" tabindex="-1">Admin Panel</button>
     </div>
@@ -509,33 +509,6 @@
   <script>
     document.getElementById("year").textContent = new Date().getFullYear();
   </script>
-
-<script>
-(function(){
-  function openCocoTrackOrder(){
-    var m=document.getElementById("trackOrderModal");
-    if(!m) return false;
-    ["adminModal","orderModal","orderSuccessModal"].forEach(function(id){
-      var x=document.getElementById(id);
-      if(x) x.classList.add("hidden");
-    });
-    m.classList.remove("hidden");
-    m.style.setProperty("display","grid","important");
-    m.style.setProperty("z-index","999999","important");
-    m.setAttribute("aria-hidden","false");
-    var input=document.getElementById("trackOrderId");
-    if(input) setTimeout(function(){ input.focus(); },50);
-    return false;
-  }
-  window.openCocoBizTrackOrder=openCocoTrackOrder;
-  document.addEventListener("click",function(e){
-    var b=e.target && e.target.closest ? e.target.closest("#trackOrderButton") : null;
-    if(!b) return;
-    e.preventDefault();
-    e.stopPropagation();
-    openCocoTrackOrder();
-  },true);
-})();
-</script>
+>
 </body>
 </html>
