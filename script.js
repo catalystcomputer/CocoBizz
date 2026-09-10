@@ -1838,6 +1838,13 @@
       // the confirmation after the WhatsApp hand-off. A WhatsApp web/app hand-off
       // cannot report delivery status back to the website, so this is intentionally
       // a short UI hand-off rather than pretending WhatsApp confirmed delivery.
+      // Save a short-lived handoff marker before opening WhatsApp. If the browser
+      // switches to WhatsApp and restores this page later, pageshow/visibilitychange
+      // will put the confirmation popup back on this same page.
+      try {
+        sessionStorage.setItem("cocobiz_pending_confirmation", JSON.stringify({ orderId: clientId, mobile: data.customer.number }));
+      } catch (_) {}
+
       try { window.open(waUrl, "_blank", "noopener,noreferrer"); } catch {}
 
       showOrderSuccess(data.customer.number, clientId);
@@ -1888,7 +1895,25 @@
       };
     }
     modal.classList.remove("hidden");
+    modal.style.display = "grid";
+    modal.style.zIndex = "100000";
+    modal.setAttribute("aria-hidden", "false");
+    try { sessionStorage.removeItem("cocobiz_pending_confirmation"); } catch (_) {}
   }
+
+  function restorePendingOrderConfirmation() {
+    try {
+      const raw = sessionStorage.getItem("cocobiz_pending_confirmation");
+      if (!raw) return;
+      const pending = JSON.parse(raw);
+      if (pending?.orderId && pending?.mobile) showOrderSuccess(pending.mobile, pending.orderId);
+    } catch (_) {}
+  }
+
+  window.addEventListener("pageshow", restorePendingOrderConfirmation);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") restorePendingOrderConfirmation();
+  });
 
   async function retryPendingOrders() {
     if (!db || !navigator.onLine) return;
