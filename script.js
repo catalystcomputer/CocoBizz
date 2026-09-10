@@ -577,36 +577,28 @@
     $("storeSettingsForm")?.addEventListener("submit", saveStoreSettings);
     const openTrackOrder = (prefill = {}) => {
       const modal = $("trackOrderModal");
-      const toggle = $("trackOrderToggle");
       if (!modal) return;
+      // Always open from the main page, even if another panel/modal was previously open.
       $("adminModal")?.classList.add("hidden");
       $("orderModal")?.classList.add("hidden");
       $("orderSuccessModal")?.classList.add("hidden");
-      if (toggle) toggle.checked = true;
+      modal.style.zIndex = "9999";
       modal.classList.remove("hidden");
-      modal.style.setProperty("display", "grid", "important");
-      modal.style.setProperty("z-index", "999999", "important");
       modal.setAttribute("aria-hidden", "false");
       if (prefill.orderId && $("trackOrderId")) $("trackOrderId").value = String(prefill.orderId).replace(/^#/, "").toUpperCase();
       if (prefill.mobile && $("trackMobile")) $("trackMobile").value = String(prefill.mobile).replace(/\D/g, "").slice(-10);
       setTimeout(() => $("trackOrderId")?.focus(), 50);
     };
+    $("trackOrderButton")?.addEventListener("click", openTrackOrder, true);
+    // Direct global fallback: Track Order must open from the main page without visiting Orders.
     window.openCocoBizTrackOrder = openTrackOrder;
     window.cocoOpenTrackOrder = openTrackOrder;
-    // The main Track Order control is CSS-backed, so it still opens even if Firebase/JS is slow.
-    $("trackOrderToggle")?.addEventListener("change", event => {
-      if (event.target.checked) {
-        $("adminModal")?.classList.add("hidden");
-        $("orderModal")?.classList.add("hidden");
-        $("orderSuccessModal")?.classList.add("hidden");
-        $("trackOrderModal")?.classList.remove("hidden");
-        $("trackOrderModal")?.setAttribute("aria-hidden", "false");
-        setTimeout(() => $("trackOrderId")?.focus(), 50);
-      } else {
-        $("trackOrderModal")?.classList.add("hidden");
-        $("trackOrderModal")?.setAttribute("aria-hidden", "true");
+    document.addEventListener("click", event => {
+      if (event.target?.closest?.("#trackOrderButton")) {
+        event.preventDefault();
+        openTrackOrder();
       }
-    });
+    }, true);
     $("trackOrderForm")?.addEventListener("submit", trackOrder);
     $("customerPaymentMethod")?.addEventListener("change", renderOrderCharges);
     $("upiPayButton")?.addEventListener("click", event => {
