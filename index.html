@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <style>
-    /* Track Order: works even if the page's JavaScript has not loaded yet. */
-    #trackOrderModal:target { display: grid !important; z-index: 99999 !important; }
+    /* Track Order button: isolated fix only. */
+    #trackOrderButton { text-decoration: none !important; display: inline-flex !important; align-items: center; justify-content: center; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -21,7 +21,7 @@
       <span>Coco<em>Biz</em></span>
     </a>
     <div class="header-actions">
-      <a class="secondary-button track-header-button" id="trackOrderButton" href="#trackOrderModal" role="button">Track Order</a>
+      <button type="button" class="secondary-button track-header-button" id="trackOrderButton">Track Order</button>
       <button class="order-button" id="openOrderButton">Order <span id="cartCount">0</span></button>
       <button class="admin-button hidden" id="adminButton" aria-hidden="true" tabindex="-1">Admin Panel</button>
     </div>
@@ -509,30 +509,32 @@
   <script>
     document.getElementById("year").textContent = new Date().getFullYear();
   </script>
+
 <script>
 (function(){
-  function openTrackDirect(){
+  function openCocoTrackOrder(){
     var m=document.getElementById("trackOrderModal");
     if(!m) return false;
-    var admin=document.getElementById("adminModal");
-    var order=document.getElementById("orderModal");
-    var success=document.getElementById("orderSuccessModal");
-    if(admin) admin.classList.add("hidden");
-    if(order) order.classList.add("hidden");
-    if(success) success.classList.add("hidden");
+    ["adminModal","orderModal","orderSuccessModal"].forEach(function(id){
+      var x=document.getElementById(id);
+      if(x) x.classList.add("hidden");
+    });
     m.classList.remove("hidden");
-    m.style.display="flex";
-    m.style.zIndex="99999";
+    m.style.setProperty("display","grid","important");
+    m.style.setProperty("z-index","999999","important");
     m.setAttribute("aria-hidden","false");
     var input=document.getElementById("trackOrderId");
-    if(input) setTimeout(function(){input.focus();},50);
+    if(input) setTimeout(function(){ input.focus(); },50);
     return false;
   }
-  window.cocoOpenTrackOrder=openTrackDirect;
-  document.addEventListener("DOMContentLoaded", function(){
-    var b=document.getElementById("trackOrderButton");
-    if(b) b.onclick=openTrackDirect;
-  });
+  window.openCocoBizTrackOrder=openCocoTrackOrder;
+  document.addEventListener("click",function(e){
+    var b=e.target && e.target.closest ? e.target.closest("#trackOrderButton") : null;
+    if(!b) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openCocoTrackOrder();
+  },true);
 })();
 </script>
 </body>
