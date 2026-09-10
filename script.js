@@ -587,6 +587,7 @@
       $("orderSuccessModal")?.classList.add("hidden");
       modal.style.zIndex = "9999";
       modal.classList.remove("hidden");
+      modal.style.display = "grid";
       modal.setAttribute("aria-hidden", "false");
       if (prefill.orderId && $("trackOrderId")) $("trackOrderId").value = String(prefill.orderId).replace(/^#/, "").toUpperCase();
       if (prefill.mobile && $("trackMobile")) $("trackMobile").value = String(prefill.mobile).replace(/\D/g, "").slice(-10);
