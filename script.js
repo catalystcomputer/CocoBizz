@@ -593,16 +593,14 @@
       if (prefill.mobile && $("trackMobile")) $("trackMobile").value = String(prefill.mobile).replace(/\D/g, "").slice(-10);
       setTimeout(() => $("trackOrderId")?.focus(), 50);
     };
-    $("trackOrderButton")?.addEventListener("click", openTrackOrder, true);
-    // Direct global fallback: Track Order must open from the main page without visiting Orders.
+    // Fresh main-page Track Order button: opens the tracking popup directly on the home page.
+    $("trackOrderMainButton")?.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      openTrackOrder();
+    });
     window.openCocoBizTrackOrder = openTrackOrder;
     window.cocoOpenTrackOrder = openTrackOrder;
-    document.addEventListener("click", event => {
-      if (event.target?.closest?.("#trackOrderButton")) {
-        event.preventDefault();
-        openTrackOrder();
-      }
-    }, true);
     $("trackOrderForm")?.addEventListener("submit", trackOrder);
     $("customerPaymentMethod")?.addEventListener("change", renderOrderCharges);
     $("upiPayButton")?.addEventListener("click", event => {
