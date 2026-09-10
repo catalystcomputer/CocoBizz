@@ -12,6 +12,9 @@
   <style>
     /* Track Order button: isolated fix only. */
     #trackOrderButton { text-decoration: none !important; display: inline-flex !important; align-items: center; justify-content: center; cursor: pointer; }
+    #trackOrderButton { text-decoration: none !important; display: inline-flex !important; align-items: center; justify-content: center; cursor: pointer; user-select: none; }
+    #trackOrderToggle { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    #trackOrderToggle:checked ~ #trackOrderModal { display: grid !important; z-index: 999999 !important; }
   </style>
 </head>
 <body>
@@ -20,8 +23,9 @@
       <span class="logo-mark">✦</span>
       <span>Coco<em>Biz</em></span>
     </a>
-    <div class="header-actions">
-      <button type="button" class="secondary-button track-header-button" id="trackOrderButton" onclick="(function(){var m=document.getElementById('trackOrderModal');if(!m)return false;['adminModal','orderModal','orderSuccessModal'].forEach(function(id){var x=document.getElementById(id);if(x)x.classList.add('hidden');});m.classList.remove('hidden');m.style.setProperty('display','grid','important');m.style.setProperty('z-index','999999','important');m.setAttribute('aria-hidden','false');var i=document.getElementById('trackOrderId');if(i)setTimeout(function(){i.focus();},50);return false;})()">Track Order</button>
+    <input type="checkbox" id="trackOrderToggle" class="track-order-toggle" aria-hidden="true">
+  <div class="header-actions">
+      <label class="secondary-button track-header-button" id="trackOrderButton" for="trackOrderToggle" role="button" tabindex="0">Track Order</label>
       <button class="order-button" id="openOrderButton">Order <span id="cartCount">0</span></button>
       <button class="admin-button hidden" id="adminButton" aria-hidden="true" tabindex="-1">Admin Panel</button>
     </div>
@@ -468,7 +472,7 @@
 
   <div class="modal hidden" id="trackOrderModal" aria-hidden="true">
     <div class="modal-box admin-box">
-      <button class="close-button" data-close="trackOrderModal">×</button>
+      <label class="close-button" for="trackOrderToggle" data-close="trackOrderModal" role="button" tabindex="0">×</label>
       <p class="eyebrow">CocoBiz tracking</p>
       <h2>Track Your Order</h2>
       <form id="trackOrderForm" class="product-form">
@@ -509,6 +513,5 @@
   <script>
     document.getElementById("year").textContent = new Date().getFullYear();
   </script>
->
 </body>
 </html>
