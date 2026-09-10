@@ -659,3 +659,8 @@ body.order-open { overflow: hidden; }
 /* Track Order must always sit above other panels and open from the main page. */
 #trackOrderModal { z-index: 9999; }
 #orderSuccessModal { z-index: 10000; }
+
+
+/* V41: restore/force the original CocoBiz footer to remain visible */
+.site-footer{display:flex!important;visibility:visible!important;opacity:1!important;position:relative!important;z-index:2!important;width:100%!important;clear:both!important;}
+.site-footer .footer-brand,.site-footer .contact-details,.site-footer .copyright{visibility:visible!important;opacity:1!important;}
