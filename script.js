@@ -585,6 +585,12 @@
       $("adminModal")?.classList.add("hidden");
       $("orderModal")?.classList.add("hidden");
       $("orderSuccessModal")?.classList.add("hidden");
+      $("wishlistModal")?.classList.add("hidden");
+      $("myOrdersModal")?.classList.add("hidden");
+      $("customerAccountModal")?.classList.add("hidden");
+      $("productDetailModal")?.classList.add("hidden");
+      document.body.classList.remove("order-open");
+      window.scrollTo({ top: 0, behavior: "auto" });
       modal.style.zIndex = "9999";
       modal.classList.remove("hidden");
       modal.style.display = "grid";
