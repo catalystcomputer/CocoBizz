@@ -659,10 +659,3 @@ body.order-open { overflow: hidden; }
 /* Track Order must always sit above other panels and open from the main page. */
 #trackOrderModal { z-index: 9999; }
 #orderSuccessModal { z-index: 10000; }
-
-
-/* CocoBiz Track Order button: no underline */
-#trackOrderButton { text-decoration: none !important; display: inline-flex !important; align-items: center; justify-content: center; cursor: pointer; }
-
-/* Track Order button only */
-#trackOrderButton { text-decoration: none !important; cursor: pointer !important; pointer-events: auto !important; }
