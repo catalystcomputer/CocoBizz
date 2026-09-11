@@ -22,7 +22,7 @@
       <button type="button" class="nav-link" id="myOrdersButton">My Orders</button>
     </nav>
     <div class="header-actions">
-      <button type="button" class="secondary-button track-header-button" id="trackOrderMainButton">Track Order</button>
+      <button type="button" class="secondary-button track-header-button" id="trackOrderMainButton" onclick="if(window.openCocoBizTrackOrder){window.openCocoBizTrackOrder();} return false;">Track Order</button>
       <button class="order-button" id="openOrderButton">🛒 Cart <span id="cartCount">0</span></button>
       <button class="admin-button hidden" id="adminButton" aria-hidden="true" tabindex="-1">Admin Panel</button>
     </div>
@@ -562,6 +562,25 @@
   </div>
 
 
+  <script>
+    // Main-page Track Order entry point. This is independent of Cart/Order tabs and
+    // remains available even if another script handler is delayed.
+    window.openCocoBizTrackOrder = function(prefill) {
+      const modal = document.getElementById("trackOrderModal");
+      if (!modal) return;
+      ["adminModal","orderModal","orderSuccessModal","wishlistModal","myOrdersModal","customerAccountModal","productDetailModal"].forEach(function(id){
+        const el=document.getElementById(id);
+        if(el){el.classList.add("hidden");el.style.display="none";el.setAttribute("aria-hidden","true");}
+      });
+      document.body.classList.remove("order-open");
+      modal.classList.remove("hidden");
+      modal.style.display="grid";
+      modal.style.zIndex="999999";
+      modal.setAttribute("aria-hidden","false");
+      if(prefill && prefill.orderId && document.getElementById("trackOrderId")) document.getElementById("trackOrderId").value=String(prefill.orderId).replace(/^#/,'').toUpperCase();
+      if(prefill && prefill.mobile && document.getElementById("trackMobile")) document.getElementById("trackMobile").value=String(prefill.mobile).replace(/\D/g,'').slice(-10);
+    };
+  </script>
   <script src="script.js"></script>
 
   <script>

@@ -1818,10 +1818,10 @@
     };
 
     try {
-      // Try immediately; if the network is temporarily unavailable,
-      // Firestore offline persistence will queue the write and sync later.
-      await saveCloud();
+      // For COD/pending orders, show confirmation immediately instead of making the
+      // customer wait for Firebase/network. Firestore write continues in background.
       if (data.paymentMethod === "ONLINE") {
+        await saveCloud();
         try {
           const payment = await openOnlinePayment(data, total);
           data.paymentStatus = "paid"; data.paidAmount = total; data.dueAmount = 0; data.paymentId = payment.razorpay_payment_id; data.status = "accepted"; data.updatedAt = Date.now();
@@ -1834,6 +1834,13 @@
         } catch (paymentError) {
           alert(`Online payment complete nahi hua: ${errorText(paymentError)}\n\nOrder ko COD/pending ke roop me rakha gaya hai.`);
         }
+      }
+
+      if (data.paymentMethod !== "ONLINE") {
+        saveCloud().catch(error => {
+          console.warn("Order cloud save deferred:", error);
+          try { localStorage.setItem("cocobiz_pending_order_" + clientId, JSON.stringify(data)); } catch (_) {}
+        });
       }
 
       localStorage.removeItem("cocobiz_pending_order_" + clientId);
