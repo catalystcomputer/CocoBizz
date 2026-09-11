@@ -35,6 +35,40 @@
       <p>Discover useful kitchen products, beautiful gifts and chocolate hampers. Order online easily.</p>
     </section>
 
+    <section class="home-hero-strip" id="homeHeroStrip">
+      <div class="hero-copy">
+        <span class="hero-kicker">CocoBiz Marketplace</span>
+        <h2>Shop smart. Save more. <em>Every day.</em></h2>
+        <p>Gifts, chocolates, kitchen essentials & electronics — all in one place.</p>
+        <div class="hero-actions"><button class="primary-button" type="button" id="heroShopButton">Shop Now</button><button class="secondary-button" type="button" id="heroDealsButton">🔥 Today's Deals</button></div>
+      </div>
+      <div class="hero-points"><span>🚚 Easy delivery</span><span>🎟️ Easy coupons</span><span>🔐 Secure checkout</span></div>
+    </section>
+
+    <section class="home-section quick-categories">
+      <div class="home-section-head"><div><p class="eyebrow">Shop by category</p><h2>What are you looking for?</h2></div></div>
+      <div class="quick-category-grid" id="quickCategoryGrid">
+        <button data-home-category="gift">🎁<strong>Gifts</strong><small>For every occasion</small></button>
+        <button data-home-category="chocolate">🍫<strong>Chocolates</strong><small>Sweet favourites</small></button>
+        <button data-home-category="kitchen">🍳<strong>Kitchen</strong><small>Useful essentials</small></button>
+        <button data-home-category="electronic">📱<strong>Electronics</strong><small>Smart picks</small></button>
+      </div>
+    </section>
+
+    <section class="home-section promo-section" id="homePromoSection">
+      <div class="home-section-head"><div><p class="eyebrow">Limited time</p><h2>🔥 Today's Deals</h2></div><button class="text-button" type="button" id="viewDealsButton">View all →</button></div>
+      <div class="mini-product-grid" id="dealsGrid"></div>
+    </section>
+
+    <section class="home-section home-banner-section hidden" id="homeOfferBanner">
+      <div id="homeOfferBannerBody"></div>
+    </section>
+
+    <section class="home-section coupon-preview-section" id="homeCouponSection">
+      <div class="home-section-head"><div><p class="eyebrow">Save more</p><h2>🎟️ Available Coupons</h2></div><span class="home-muted">Apply at checkout</span></div>
+      <div class="coupon-preview-grid" id="homeCouponsGrid"><div class="home-loading">Loading offers…</div></div>
+    </section>
+
     <section class="product-search-section">
       <div class="product-search">
         <span>⌕</span>
@@ -50,6 +84,10 @@
         <button type="button" class="category-filter" data-category="kitchen">🍳 Kitchen</button>
         <button type="button" class="category-filter" data-category="electronic">📱 Electronics</button>
       </div>
+    </section>
+
+    <section class="home-section delivery-check-section">
+      <div class="delivery-check-box"><div><p class="eyebrow">Before you order</p><h2>🚚 Check delivery estimate</h2><p>Apna 6-digit PIN code enter karke expected delivery window dekhein.</p></div><div class="delivery-check-form"><input id="homePincode" inputmode="numeric" maxlength="6" placeholder="Enter PIN code" aria-label="PIN code"><button type="button" class="primary-button" id="checkHomePincode">Check</button><small id="homePincodeResult"></small></div></div>
     </section>
 
     <section class="store-benefits" aria-label="Shopping benefits">
@@ -76,6 +114,16 @@
     <section class="products-section" id="shopProducts">
       <div class="product-grid" id="productGrid"></div>
       <p class="empty-message" id="emptyMessage">No products available yet.</p>
+    </section>
+
+    <section class="home-section recent-section hidden" id="recentSection">
+      <div class="home-section-head"><div><p class="eyebrow">Your activity</p><h2>👀 Recently Viewed</h2></div></div>
+      <div class="mini-product-grid" id="recentGrid"></div>
+    </section>
+
+    <section class="home-section recommendation-section hidden" id="recommendationSection">
+      <div class="home-section-head"><div><p class="eyebrow">CocoBiz picks</p><h2>✨ Recommended For You</h2></div></div>
+      <div class="mini-product-grid" id="recommendationGrid"></div>
     </section>
 
   <footer class="site-footer">

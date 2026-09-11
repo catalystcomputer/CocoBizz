@@ -420,6 +420,59 @@
     updateWishlistCount();
   }
 
+
+  function miniProductCard(product) {
+    const rate=publicRate(product), actual=Number(product.actualPrice||0);
+    const discount=actual>rate ? Math.round((actual-rate)*100/Math.max(1,actual)) : 0;
+    const out=product.stock!=null && Number(product.stock)<=0;
+    return `<article class="mini-product">${discount?`<span class="mini-off">${discount}% OFF</span>`:''}<img src="${product.image||placeholderImage()}" alt="${escapeHtml(product.name)}" data-mini-view="${escapeHtml(product.id)}"><div class="mini-product-body"><h3 title="${escapeHtml(product.name)}">${escapeHtml(product.name)}</h3><div><span class="mini-price">${money(rate)}</span>${actual>rate?`<span class="mini-old">${money(actual)}</span>`:''}</div><button type="button" class="primary-button" data-mini-cart="${escapeHtml(product.id)}" ${out?'disabled':''}>${out?'Out of stock':'Add to Cart'}</button></div></article>`;
+  }
+
+  function bindMiniProductActions(box) {
+    if(!box) return;
+    box.querySelectorAll('[data-mini-view]').forEach(el=>el.onclick=()=>openProductDetail(el.dataset.miniView));
+    box.querySelectorAll('[data-mini-cart]').forEach(el=>el.onclick=()=>{const id=el.dataset.miniCart;cart[id]=Number(cart[id]||0)+1;updateCart();showCocoToast('Added to cart 🛒');});
+  }
+
+  function renderHomeSections() {
+    const active=products.filter(p=>p.active!==false);
+    const deals=active.filter(p=>Number(p.actualPrice||0)>publicRate(p)).sort((a,b)=>{
+      const da=(Number(a.actualPrice||0)-publicRate(a))/Math.max(1,Number(a.actualPrice||0));
+      const db=(Number(b.actualPrice||0)-publicRate(b))/Math.max(1,Number(b.actualPrice||0)); return db-da;
+    }).slice(0,4);
+    const dealBox=$('dealsGrid');
+    if(dealBox){dealBox.innerHTML=deals.length?deals.map(miniProductCard).join(''):'<p class="home-loading">Deals abhi available nahi hain.</p>';bindMiniProductActions(dealBox);}
+
+    const recentIds=JSON.parse(localStorage.getItem('cocobizRecentlyViewed')||'[]');
+    const recent=recentIds.map(id=>active.find(p=>p.id===id)).filter(Boolean).slice(0,4);
+    const recentSection=$('recentSection'), recentBox=$('recentGrid');
+    if(recentSection&&recentBox){recentSection.classList.toggle('hidden',!recent.length);recentBox.innerHTML=recent.map(miniProductCard).join('');bindMiniProductActions(recentBox);}
+
+    const categoryCounts={}; recent.forEach(p=>{const c=String(p.category||'gift').toLowerCase();categoryCounts[c]=(categoryCounts[c]||0)+1;});
+    let rec=active.filter(p=>!recentIds.includes(p.id));
+    const favCat=Object.keys(categoryCounts).sort((a,b)=>categoryCounts[b]-categoryCounts[a])[0];
+    if(favCat) rec.sort((a,b)=>(String(b.category||'').toLowerCase()===favCat)-(String(a.category||'').toLowerCase()===favCat));
+    rec=rec.sort((a,b)=>{
+      const da=(Number(a.actualPrice||0)-publicRate(a))/Math.max(1,Number(a.actualPrice||0));
+      const db=(Number(b.actualPrice||0)-publicRate(b))/Math.max(1,Number(b.actualPrice||0)); return db-da;
+    }).slice(0,4);
+    const recSection=$('recommendationSection'), recBox=$('recommendationGrid');
+    if(recSection&&recBox){recSection.classList.toggle('hidden',!rec.length);recBox.innerHTML=rec.map(miniProductCard).join('');bindMiniProductActions(recBox);}
+
+    if(activeOffer?.image){const sec=$('homeOfferBanner'), body=$('homeOfferBannerBody');if(sec&&body){sec.classList.remove('hidden');body.innerHTML=`<img src="${activeOffer.image}" alt="${escapeHtml(activeOffer.title||'CocoBiz offer')}">`;body.onclick=()=>renderCustomerOffer(true);}}
+  }
+
+  async function loadHomeCoupons() {
+    const box=$('homeCouponsGrid'); if(!box||!db) return;
+    try {
+      const snap=await db.collection('coupons').get();
+      const now=Date.now();
+      const list=snap.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.active!==false && (!c.validUntil || Number(c.validUntil)>now) && (!c.usageLimit || Number(c.usageCount||0)<Number(c.usageLimit))).slice(0,6);
+      box.innerHTML=list.length?list.map(c=>`<div class="coupon-preview"><div class="coupon-code">${escapeHtml(c.code)}</div><div class="coupon-desc">${c.type==='percent'?Number(c.value)+'% OFF':money(c.value)+' OFF'}${Number(c.minOrder||0)?` · Min order ${money(c.minOrder)}`:''}${c.maxDiscount?` · Up to ${money(c.maxDiscount)}`:''}</div><button type="button" class="secondary-button coupon-copy" data-copy-coupon="${escapeHtml(c.code)}">Copy & Use</button></div>`).join(''):'<div class="home-loading">Abhi koi active coupon nahi hai.</div>';
+      box.querySelectorAll('[data-copy-coupon]').forEach(b=>b.onclick=async()=>{const code=b.dataset.copyCoupon;try{await navigator.clipboard.writeText(code);}catch(_){};const input=$('couponCodeInput');if(input)input.value=code;showCocoToast(`Coupon ${code} copied 🎟️`);if(Object.values(cart).some(Number)){openOrderModal();setTimeout(()=>{$('couponCodeInput')?.focus();},250);}});
+    } catch(e){box.innerHTML='<div class="home-loading">Coupons load nahi ho paaye.</div>';}
+  }
+
   function updateCart() {
     const count = Object.values(cart)
       .reduce((sum, quantity) => sum + Number(quantity), 0);
@@ -535,7 +588,7 @@
   function showCocoToast(message){const t=$("cocoToast");if(!t)return;t.textContent=message;t.classList.add("show");clearTimeout(window.__cocoToastTimer);window.__cocoToastTimer=setTimeout(()=>t.classList.remove("show"),1800);}
   function updateWishlistCount(){if($("wishlistCount"))$("wishlistCount").textContent=wishlistIds.length;}
   function toggleWishlist(id){if(wishlistIds.includes(id))wishlistIds=wishlistIds.filter(x=>x!==id);else wishlistIds=[...wishlistIds,id];localStorage.setItem("cocobizWishlist",JSON.stringify(wishlistIds));renderProducts();renderWishlist();showCocoToast(wishlistIds.includes(id)?"Added to wishlist ❤️":"Removed from wishlist");}
-  function openProductDetail(id){const p=products.find(x=>x.id===id);if(!p)return;const rate=publicRate(p),actual=Number(p.actualPrice||0),discount=actual>rate?Math.round((actual-rate)*100/Math.max(1,actual)):0;const box=$("productDetailBody");if(!box)return;box.innerHTML=`<div class="product-detail-layout"><img class="product-detail-image" src="${p.image||placeholderImage()}" alt="${escapeHtml(p.name)}"><div class="product-detail-info"><div class="product-category-badge">${p.category==='chocolate'?'🍫 Chocolate':p.category==='kitchen'?'🍳 Kitchen':p.category==='electronic'?'📱 Electronics':'🎁 Gift'}</div><h2>${escapeHtml(p.name)}</h2><div><span class="detail-price">${money(rate)}</span>${actual>rate?`<span class="detail-old">${money(actual)}</span>`:''}</div>${discount?`<div class="detail-save">You save ${discount}% on this product</div>`:''}<p class="detail-description">${escapeHtml(p.description||'Quality product from CocoBiz.')}</p><div class="detail-meta"><div>🚚 <strong>Delivery:</strong> ${formatDeliveryRange(Date.now())}</div><div>🔐 <strong>Payment:</strong> UPI, COD${storeSettings.onlinePaymentEnabled?', Online':''}</div><div>📦 <strong>Stock:</strong> ${p.stock==null?'Available':Number(p.stock)>0?Number(p.stock)+' available':'Out of stock'}</div></div><div class="form-actions"><button class="secondary-button" type="button" onclick="document.getElementById('productDetailModal').classList.add('hidden')">Close</button><button class="primary-button" id="detailAddCart" type="button" ${p.stock!=null&&Number(p.stock)<=0?'disabled':''}>Add to Cart</button></div></div></div>`;$("productDetailModal")?.classList.remove("hidden");$("detailAddCart")?.addEventListener("click",()=>{cart[id]=Number(cart[id]||0)+1;updateCart();showCocoToast("Added to cart 🛒");$("productDetailModal")?.classList.add("hidden");});}
+  function openProductDetail(id){const p=products.find(x=>x.id===id);if(!p)return; try{const ids=JSON.parse(localStorage.getItem('cocobizRecentlyViewed')||'[]').filter(x=>x!==id);ids.unshift(id);localStorage.setItem('cocobizRecentlyViewed',JSON.stringify(ids.slice(0,12)));}catch(_){} renderHomeSections();const rate=publicRate(p),actual=Number(p.actualPrice||0),discount=actual>rate?Math.round((actual-rate)*100/Math.max(1,actual)):0;const box=$("productDetailBody");if(!box)return;box.innerHTML=`<div class="product-detail-layout"><img class="product-detail-image" src="${p.image||placeholderImage()}" alt="${escapeHtml(p.name)}"><div class="product-detail-info"><div class="product-category-badge">${p.category==='chocolate'?'🍫 Chocolate':p.category==='kitchen'?'🍳 Kitchen':p.category==='electronic'?'📱 Electronics':'🎁 Gift'}</div><h2>${escapeHtml(p.name)}</h2><div><span class="detail-price">${money(rate)}</span>${actual>rate?`<span class="detail-old">${money(actual)}</span>`:''}</div>${discount?`<div class="detail-save">You save ${discount}% on this product</div>`:''}<p class="detail-description">${escapeHtml(p.description||'Quality product from CocoBiz.')}</p><div class="detail-meta"><div>🚚 <strong>Delivery:</strong> ${formatDeliveryRange(Date.now())}</div><div>🔐 <strong>Payment:</strong> UPI, COD${storeSettings.onlinePaymentEnabled?', Online':''}</div><div>📦 <strong>Stock:</strong> ${p.stock==null?'Available':Number(p.stock)>0?Number(p.stock)+' available':'Out of stock'}</div></div><div class="form-actions"><button class="secondary-button" type="button" onclick="document.getElementById('productDetailModal').classList.add('hidden')">Close</button><button class="primary-button" id="detailAddCart" type="button" ${p.stock!=null&&Number(p.stock)<=0?'disabled':''}>Add to Cart</button></div></div></div>`;$("productDetailModal")?.classList.remove("hidden");$("detailAddCart")?.addEventListener("click",()=>{cart[id]=Number(cart[id]||0)+1;updateCart();showCocoToast("Added to cart 🛒");$("productDetailModal")?.classList.add("hidden");});}
   function renderWishlist(){const box=$("wishlistBody");if(!box)return;const items=wishlistIds.map(id=>products.find(p=>p.id===id)).filter(Boolean);box.innerHTML=items.length?items.map(p=>`<div class="wishlist-item"><img src="${p.image||placeholderImage()}" alt="${escapeHtml(p.name)}"><h3>${escapeHtml(p.name)}</h3><strong>${money(publicRate(p))}</strong><div class="wishlist-actions"><button class="secondary-button" data-wish-view="${escapeHtml(p.id)}">View</button><button class="primary-button" data-wish-cart="${escapeHtml(p.id)}">Add to Cart</button></div></div>`).join(""): '<p class="modal-subtitle">Wishlist abhi empty hai.</p>';box.querySelectorAll('[data-wish-view]').forEach(b=>b.onclick=()=>openProductDetail(b.dataset.wishView));box.querySelectorAll('[data-wish-cart]').forEach(b=>b.onclick=()=>{const id=b.dataset.wishCart;cart[id]=Number(cart[id]||0)+1;updateCart();showCocoToast('Added to cart 🛒');});}
   function renderMyOrders(){const box=$("myOrdersBody");if(!box)return;const list=JSON.parse(localStorage.getItem('cocobizMyOrders')||'[]');box.innerHTML=list.length?list.slice(0,20).map(o=>`<div class="my-order-card"><div class="order-head"><strong>${escapeHtml(o.id)}</strong><span class="status-badge">${escapeHtml(o.status||'Order Placed')}</span></div><small>${escapeHtml(o.date||'')} • ${money(o.total||0)}</small><div class="form-actions" style="margin-top:10px"><button class="primary-button" data-my-track="${escapeHtml(o.id)}">Track Order</button></div></div>`).join(''):'<p class="modal-subtitle">Abhi is device par koi order saved nahi hai. Order place karne ke baad yahan dikhega.</p>';box.querySelectorAll('[data-my-track]').forEach(b=>b.onclick=()=>{ const order=list.find(o=>o.id===b.dataset.myTrack); $("myOrdersModal")?.classList.add('hidden'); window.cocoOpenTrackOrder?.({orderId:b.dataset.myTrack,mobile:order?.mobile||''}); setTimeout(()=>$("trackOrderForm")?.requestSubmit(),150); });}
   function saveLocalCustomerOrder(order){const list=JSON.parse(localStorage.getItem('cocobizMyOrders')||'[]');const next=[{id:order.clientId,total:order.total,date:order.date,status:'Order Placed',mobile:order.customer?.number||''},...list.filter(x=>x.id!==order.clientId)].slice(0,20);localStorage.setItem('cocobizMyOrders',JSON.stringify(next));}
@@ -543,6 +596,11 @@
   function bindEvents() {
     $("openOrderButton")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); openOrderModal(); });
     $("bottomOrderButton")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); openOrderModal(); });
+    $("checkHomePincode")?.addEventListener("click",()=>{const pin=$("homePincode")?.value.trim()||"";const out=$("homePincodeResult");if(!/^\d{6}$/.test(pin)){if(out)out.textContent="Valid 6-digit PIN code enter karein.";return;}if(out)out.textContent=`📦 Expected delivery: ${formatDeliveryRange(Date.now())}`;});
+    $("heroShopButton")?.addEventListener("click",()=>document.getElementById("shopProducts")?.scrollIntoView({behavior:"smooth"}));
+    $("heroDealsButton")?.addEventListener("click",()=>document.getElementById("homePromoSection")?.scrollIntoView({behavior:"smooth"}));
+    $("viewDealsButton")?.addEventListener("click",()=>document.getElementById("homePromoSection")?.scrollIntoView({behavior:"smooth"}));
+    document.querySelectorAll("[data-home-category]").forEach(b=>b.addEventListener("click",()=>{activeCategory=b.dataset.homeCategory||"all";document.querySelectorAll(".category-filter").forEach(x=>x.classList.toggle("active",x.dataset.category===activeCategory));renderProducts();document.getElementById("shopProducts")?.scrollIntoView({behavior:"smooth"});}));
     $("productSearch")?.addEventListener("input", event => {
       searchTerm = event.target.value.trim().toLowerCase();
       renderProducts();
@@ -2764,8 +2822,10 @@
     await Promise.all([loadProducts(), loadOrders(), loadOffer(), loadStoreSettings()]);
     renderStoreSettings();
     renderProducts();
+    renderHomeSections();
     renderCustomerOffer();
     updateCart();
+    loadHomeCoupons();
   }
 
   async function start() {
