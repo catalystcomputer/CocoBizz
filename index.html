@@ -158,7 +158,11 @@
           </div>
           <button class="secondary-button" type="button" id="enableNotificationsButton">🔔 Enable Order Alerts</button>
         </div>
-        <div class="sale-summary">
+        <div class="sale-summary admin-kpi-grid">
+          <div><small>Total Orders</small><strong id="totalOrderMetric">0</strong></div>
+          <div><small>Customers</small><strong id="totalCustomerMetric">0</strong></div>
+          <div><small>Products</small><strong id="totalProductMetric">0</strong></div>
+          <div><small>Low Stock</small><strong id="lowStockMetric">0</strong></div>
           <div><small>Sales</small><strong id="todaySale">₹0</strong></div>
           <div><small>Accepted Orders</small><strong id="acceptedOrderTotal">0</strong></div>
           <div><small>Payment Received</small><strong id="todayPaid">₹0</strong></div>
@@ -402,6 +406,8 @@
       </div>
 
       <div id="ordersPanel" class="hidden">
+        <div class="admin-list-toolbar order-toolbar"><input id="adminOrderSearch" type="search" placeholder="Search Order ID, customer or mobile..." aria-label="Search orders"><select id="adminOrderStatusFilter" aria-label="Filter orders"><option value="all">All statuses</option><option value="pending">Pending</option><option value="pending_admin">Pending Admin</option><option value="accepted">Accepted</option><option value="received">Payment Received</option><option value="packed">Packed</option><option value="shipped">Shipped</option><option value="out_for_delivery">Out for Delivery</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled</option><option value="returned">Returned</option></select><button class="secondary-button" type="button" id="clearOrderFilters">Clear</button></div>
+        <div class="orders-summary-strip" id="ordersSummaryStrip"></div>
         <div class="admin-orders" id="adminOrders"></div>
       </div>
     </div>

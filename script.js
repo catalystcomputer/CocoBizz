@@ -32,6 +32,10 @@
   let activeOffer = null;
   let lastCustomerOfferId = null;
   let reportPeriod = "all";
+  let adminOrderSearch = "";
+  let adminOrderStatus = "all";
+  let adminProductSearch = "";
+  let adminProductCategory = "all";
   let knownOrderIds = new Set();
   let notificationPrimed = false;
   let orderPollTimer = null;
@@ -379,7 +383,7 @@
   function renderProducts() {
     const grid = $("productGrid");
     if (!grid) return;
-    let visibleProducts = products.filter(product => {
+    let visibleProducts = products.filter(product => product.active !== false).filter(product => {
       const haystack = `${product.name || ""} ${product.description || ""}`.toLowerCase();
       const category = String(product.category || "gift").toLowerCase();
       return (!searchTerm || haystack.includes(searchTerm)) && (activeCategory === "all" || category === activeCategory);
@@ -679,6 +683,12 @@
       if (reminder) sendDueReminder(decodeURIComponent(reminder.dataset.remindCustomer));
       if (bill) printOrderBill(bill.dataset.billCustomerOrder);
     });
+
+    $("adminOrderSearch")?.addEventListener("input", event => { adminOrderSearch = event.target.value; renderOrders(); });
+    $("adminOrderStatusFilter")?.addEventListener("change", event => { adminOrderStatus = event.target.value; renderOrders(); });
+    $("clearOrderFilters")?.addEventListener("click", () => { adminOrderSearch=""; adminOrderStatus="all"; if($("adminOrderSearch")) $("adminOrderSearch").value=""; if($("adminOrderStatusFilter")) $("adminOrderStatusFilter").value="all"; renderOrders(); });
+    $("adminProductSearch")?.addEventListener("input", event => { adminProductSearch = event.target.value; renderAdminProducts(); });
+    $("adminProductCategoryFilter")?.addEventListener("change", event => { adminProductCategory = event.target.value; renderAdminProducts(); });
 
     $("adminOrders")?.addEventListener("click", event => {
       const returnButton = event.target.closest("[data-return-order]");
@@ -1035,9 +1045,15 @@
   function renderAdminProducts() {
     const box = $("adminProducts");
     if (!box) return;
+    const q = adminProductSearch.trim().toLowerCase();
+    const visible = products.filter(product => {
+      const hay = `${product.name || ""} ${product.description || ""}`.toLowerCase();
+      const cat = String(product.category || "gift").toLowerCase();
+      return (!q || hay.includes(q)) && (adminProductCategory === "all" || cat === adminProductCategory);
+    });
 
-    box.innerHTML = products.length
-      ? products.map(product => `
+    box.innerHTML = visible.length
+      ? visible.map(product => `
           <div class="admin-product">
             <img src="${product.image || placeholderImage()}"
                  alt="${escapeHtml(product.name)}">
@@ -1049,14 +1065,14 @@
                 <br>Actual: ${money(product.actualPrice)}
                 <br>Cost: ${product.costPrice == null ? "Not set" : money(product.costPrice)}
                 <br>Stock: ${product.stock == null ? "Not tracked" : Number(product.stock)}
+                <br>Category: ${escapeHtml(product.category || "gift")} · ${product.returnable === true ? "Return allowed" : "No return"}
+                <br>Status: ${product.active === false ? "Inactive" : "Active"}
               </small>
             </div>
 
             <div class="admin-product-actions">
-              <button class="secondary-button"
-                      data-edit="${escapeHtml(product.id)}">
-                Edit
-              </button>
+              <button class="secondary-button" data-edit="${escapeHtml(product.id)}">Edit</button>
+              <button class="secondary-button" data-toggle-product="${escapeHtml(product.id)}">${product.active === false ? "Activate" : "Deactivate"}</button>
 
               <button class="delete-button"
                       data-delete-product="${escapeHtml(product.id)}">
@@ -1073,6 +1089,9 @@
 
     box.querySelectorAll("[data-delete-product]").forEach(button => {
       button.onclick = () => deleteProduct(button.dataset.deleteProduct);
+    });
+    box.querySelectorAll("[data-toggle-product]").forEach(button => {
+      button.onclick = () => toggleProductActive(button.dataset.toggleProduct);
     });
   }
 
@@ -1177,6 +1196,7 @@
         salePrice,
         costPrice,
         stock,
+        active: oldProduct?.active !== false,
         image,
         createdAt: oldProduct?.createdAt || Date.now(),
         updatedAt: Date.now()
@@ -1224,6 +1244,21 @@
     if ($("stockQty")) $("stockQty").value = product.stock ?? "";
     $("saveButton").textContent = "Update Product";
     $("cancelEdit")?.classList.remove("hidden");
+  }
+
+  async function toggleProductActive(id) {
+    const product = products.find(item => item.id === id);
+    if (!product || !auth?.currentUser) return;
+    const next = product.active === false;
+    try {
+      await db.collection("products").doc(id).update({active: next, updatedAt: Date.now()});
+      await loadProducts();
+      renderProducts();
+      renderAdminProducts();
+      fillSaleProducts();
+    } catch (error) {
+      alert(`Product status update नहीं हुआ: ${errorText(error)}`);
+    }
   }
 
   async function deleteProduct(id) {
@@ -1945,9 +1980,22 @@
     if (!box) return;
 
     if ($("orderCount")) $("orderCount").textContent = orders.length;
+    const q = adminOrderSearch.trim().toLowerCase();
+    const visibleOrders = orders.filter(order => {
+      const hay = `${order.id || ""} ${order.customer?.name || ""} ${order.customer?.number || ""}`.toLowerCase();
+      return (!q || hay.includes(q)) && (adminOrderStatus === "all" || String(order.status || "pending") === adminOrderStatus);
+    });
+    const acceptedVisible = visibleOrders.filter(o => !["pending","salesman_pending","pending_admin","cancelled","returned"].includes(o.status));
+    const summary = $("ordersSummaryStrip");
+    if (summary) {
+      const total = visibleOrders.reduce((s,o)=>s+getOrderNet(o),0);
+      const paid = visibleOrders.reduce((s,o)=>s+Number(o.paidAmount||0),0);
+      const due = visibleOrders.reduce((s,o)=>s+getOrderDue(o),0);
+      summary.innerHTML = `<span>Showing <b>${visibleOrders.length}</b></span><span>Sales <b>${money(total)}</b></span><span>Received <b>${money(paid)}</b></span><span>Due <b>${money(due)}</b></span>`;
+    }
 
-    box.innerHTML = orders.length
-      ? orders.map(order => {
+    box.innerHTML = visibleOrders.length
+      ? visibleOrders.map(order => {
           const returned = Array.isArray(order.returns) ? order.returns : [];
           const returnedTotal = Number(order.returnedTotal || returned.reduce((x, r) => x + Number(r.total || 0), 0));
           const netTotal = Number(order.netTotal ?? (Number(order.total || 0) - returnedTotal));
@@ -2019,7 +2067,7 @@
             </div>
           </div>`;
         }).join("")
-      : "<p class='modal-subtitle'>No orders yet.</p>";
+      : `<p class='modal-subtitle'>${orders.length ? "No orders match the current filter." : "No orders yet."}</p>`;
   }
 
   async function adjustStockForOrder(order, direction) {
@@ -2681,6 +2729,13 @@
     const due = dashboardOrders.reduce((sum, order) => sum + getOrderDue(order), 0);
     const profitValues = dashboardOrders.map(estimateOrderProfit).filter(v => v != null);
     const estimatedProfit = profitValues.reduce((a,b)=>a+b,0);
+    if ($("totalOrderMetric")) $("totalOrderMetric").textContent = orders.length;
+    if ($("totalCustomerMetric")) {
+      const customerSet = new Set(orders.map(o => customerKey(o)).filter(k => k !== "unknown"));
+      $("totalCustomerMetric").textContent = customerSet.size;
+    }
+    if ($("totalProductMetric")) $("totalProductMetric").textContent = products.length;
+    if ($("lowStockMetric")) $("lowStockMetric").textContent = products.filter(p => p.stock != null && Number(p.stock) <= 10).length;
     if ($("todaySale")) $("todaySale").textContent = money(total);
     if ($("todayPaid")) $("todayPaid").textContent = money(paid);
     if ($("todayDue")) $("todayDue").textContent = money(due);
