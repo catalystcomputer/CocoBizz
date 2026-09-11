@@ -1834,36 +1834,8 @@
 
       localStorage.removeItem("cocobiz_pending_order_" + clientId);
 
-      const message = [
-        "*CocoBiz NEW ORDER*",
-        `Order ID: ${clientId}`,
-        "",
-        ...items.map(item => `${item.name} × ${item.quantity} = ${money(item.total)}`),
-        "",
-        `Subtotal: ${money(charges.subtotal)}`, `Delivery: ${charges.delivery ? money(charges.delivery) : "FREE"}`, `Platform fee: ${charges.platformFee ? money(charges.platformFee) : "FREE"}`, `Coupon: ${data.couponCode || "None"}`, `Discount: ${data.couponDiscount ? money(data.couponDiscount) : "₹0.00"}`, `Total: ${money(total)}`, `Estimated delivery: ${deliveryEstimate}`, `Payment: ${data.paymentMethod}`,
-        ...(data.paymentMethod === "UPI" ? [`UPI ID: ${storeSettings.upiId}`, `UTR: ${data.utr || "Not submitted"}`] : []),
-        `Name: ${data.customer.name}`,
-        `Mobile: ${data.customer.number}`,
-        `Address: ${data.customer.address}`,
-        `Type: ${data.customer.type}`
-      ].join("\n");
-
-      const targetNumber = data.salesmanNumber ? String(data.salesmanNumber).replace(/\D/g, "") : WHATSAPP_NUMBER;
-      const normalizedTarget = targetNumber.length === 10 ? "91" + targetNumber : targetNumber;
-      const waUrl = `https://wa.me/${normalizedTarget}?text=${encodeURIComponent(message)}`;
-      // Open WhatsApp first, then show the website confirmation so the customer sees
-      // the confirmation after the WhatsApp hand-off. A WhatsApp web/app hand-off
-      // cannot report delivery status back to the website, so this is intentionally
-      // a short UI hand-off rather than pretending WhatsApp confirmed delivery.
-      // Save a short-lived handoff marker before opening WhatsApp. If the browser
-      // switches to WhatsApp and restores this page later, pageshow/visibilitychange
-      // will put the confirmation popup back on this same page.
-      try {
-        sessionStorage.setItem("cocobiz_pending_confirmation", JSON.stringify({ orderId: clientId, mobile: data.customer.number }));
-      } catch (_) {}
-
-      try { window.open(waUrl, "_blank", "noopener,noreferrer"); } catch {}
-
+      // Order confirmation is shown directly on the website.
+      // Do NOT automatically open/send the order on WhatsApp.
       showOrderSuccess(data.customer.number, clientId);
       saveLocalCustomerOrder(data);
 
