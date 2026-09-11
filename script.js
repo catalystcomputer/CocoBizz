@@ -582,13 +582,16 @@
       const modal = $("trackOrderModal");
       if (!modal) return;
       // Always open from the main page, even if another panel/modal was previously open.
-      $("adminModal")?.classList.add("hidden");
-      $("orderModal")?.classList.add("hidden");
-      $("orderSuccessModal")?.classList.add("hidden");
-      $("wishlistModal")?.classList.add("hidden");
-      $("myOrdersModal")?.classList.add("hidden");
-      $("customerAccountModal")?.classList.add("hidden");
-      $("productDetailModal")?.classList.add("hidden");
+      // Force every other tab/modal completely closed before opening tracking.
+      // This guarantees Track Order is shown over the main product page, never over Cart/Order.
+      ["adminModal", "orderModal", "orderSuccessModal", "wishlistModal", "myOrdersModal", "customerAccountModal", "productDetailModal"].forEach(id => {
+        const el = $(id);
+        if (el) {
+          el.classList.add("hidden");
+          el.style.display = "none";
+          el.setAttribute("aria-hidden", "true");
+        }
+      });
       document.body.classList.remove("order-open");
       window.scrollTo({ top: 0, behavior: "auto" });
       modal.style.zIndex = "9999";
