@@ -459,7 +459,6 @@
     const recSection=$('recommendationSection'), recBox=$('recommendationGrid');
     if(recSection&&recBox){recSection.classList.toggle('hidden',!rec.length);recBox.innerHTML=rec.map(miniProductCard).join('');bindMiniProductActions(recBox);}
 
-    if(activeOffer?.image){const sec=$('homeOfferBanner'), body=$('homeOfferBannerBody');if(sec&&body){sec.classList.remove('hidden');body.innerHTML=`<img src="${activeOffer.image}" alt="${escapeHtml(activeOffer.title||'CocoBiz offer')}">`;body.onclick=()=>renderCustomerOffer(true);}}
   }
 
   async function loadHomeCoupons() {
