@@ -368,8 +368,11 @@
         <form id="couponForm" class="product-form">
           <div class="form-group"><label for="couponCode">Coupon code</label><input id="couponCode" type="text" maxlength="30" placeholder="e.g. WELCOME100" required></div>
           <div class="form-group"><label>&nbsp;</label><button class="secondary-button" type="button" id="generateCouponCode">Generate Code</button></div>
-          <div class="form-group"><label for="couponType">Discount type</label><select id="couponType"><option value="flat">Flat ₹</option><option value="percent">Percentage %</option></select></div>
-          <div class="form-group"><label for="couponValue">Discount value</label><input id="couponValue" type="number" min="0" step="0.01" required></div>
+          <div class="form-group"><label for="couponVisibility">Coupon visibility</label><select id="couponVisibility"><option value="public">Public — anyone can use</option><option value="private">Private — only selected customer(s)</option></select></div>
+          <div class="form-group full-width hidden" id="couponPrivateCustomersWrap"><label for="couponPrivateCustomers">Private customer mobile number(s)</label><input id="couponPrivateCustomers" type="text" placeholder="e.g. 9876543210, 9123456789"><small>Comma se alag karein. Sirf in numbers wale customers coupon use kar sakenge.</small></div>
+          <div class="form-group"><label for="couponBenefit">Coupon kis liye hai?</label><select id="couponBenefit"><option value="product_discount">Samaan par discount</option><option value="free_delivery">Free delivery</option></select></div>
+          <div class="form-group" id="couponTypeWrap"><label for="couponType">Discount type</label><select id="couponType"><option value="flat">Flat ₹</option><option value="percent">Percentage %</option></select></div>
+          <div class="form-group" id="couponValueWrap"><label for="couponValue">Discount value</label><input id="couponValue" type="number" min="0" step="0.01" required></div>
           <div class="form-group"><label for="couponMinOrder">Minimum order ₹ <small>(optional)</small></label><input id="couponMinOrder" type="number" min="0" step="0.01" placeholder="e.g. 499"></div>
           <div class="form-group"><label for="couponMaxDiscount">Maximum discount ₹ <small>(optional, % coupon)</small></label><input id="couponMaxDiscount" type="number" min="0" step="0.01" placeholder="e.g. 200"></div>
           <div class="form-group"><label for="couponUsageLimit">Total uses allowed <small>(0 = unlimited)</small></label><input id="couponUsageLimit" type="number" min="0" step="1" value="0"></div>

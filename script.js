@@ -466,7 +466,7 @@
     try {
       const snap=await db.collection('coupons').get();
       const now=Date.now();
-      const list=snap.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.active!==false && (!c.validUntil || Number(c.validUntil)>now) && (!c.usageLimit || Number(c.usageCount||0)<Number(c.usageLimit))).slice(0,6);
+      const list=snap.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.visibility!=='private' && c.active!==false && (!c.validUntil || Number(c.validUntil)>now) && (!c.usageLimit || Number(c.usageCount||0)<Number(c.usageLimit))).slice(0,6);
       box.innerHTML=list.length?list.map(c=>`<div class="coupon-preview"><div class="coupon-code">${escapeHtml(c.code)}</div><div class="coupon-desc">${c.type==='percent'?Number(c.value)+'% OFF':money(c.value)+' OFF'}${Number(c.minOrder||0)?` · Min order ${money(c.minOrder)}`:''}${c.maxDiscount?` · Up to ${money(c.maxDiscount)}`:''}</div><button type="button" class="secondary-button coupon-copy" data-copy-coupon="${escapeHtml(c.code)}">Copy & Use</button></div>`).join(''):'<div class="home-loading">Abhi koi active coupon nahi hai.</div>';
       box.querySelectorAll('[data-copy-coupon]').forEach(b=>b.onclick=async()=>{const code=b.dataset.copyCoupon;try{await navigator.clipboard.writeText(code);}catch(_){};const input=$('couponCodeInput');if(input)input.value=code;showCocoToast(`Coupon ${code} copied 🎟️`);if(Object.values(cart).some(Number)){openOrderModal();setTimeout(()=>{$('couponCodeInput')?.focus();},250);}});
     } catch(e){box.innerHTML='<div class="home-loading">Coupons load nahi ho paaye.</div>';}
@@ -648,6 +648,9 @@
     $("couponsTab")?.addEventListener("click", () => showAdminPanel("coupons"));
     $("couponForm")?.addEventListener("submit", saveCoupon);
     $("generateCouponCode")?.addEventListener("click", () => { $("couponCode").value = generateCouponCode(); });
+    $("couponVisibility")?.addEventListener("change", updateCouponFormVisibility);
+    $("couponBenefit")?.addEventListener("change", updateCouponFormVisibility);
+    updateCouponFormVisibility();
     $("applyCouponButton")?.addEventListener("click", applyCouponFromCheckout);
     $("checkoutNextButton")?.addEventListener("click", goToPaymentStep);
     $("checkoutBackButton")?.addEventListener("click", () => setCheckoutStep(1));
@@ -1544,9 +1547,14 @@
     const beforeCoupon = subtotal + delivery + platformFee;
     let discount = 0;
     if (appliedCoupon) {
-      if (appliedCoupon.type === "percent") discount = beforeCoupon * Number(appliedCoupon.value || 0) / 100;
-      else discount = Number(appliedCoupon.value || 0);
-      if (appliedCoupon.maxDiscount > 0) discount = Math.min(discount, Number(appliedCoupon.maxDiscount));
+      if (appliedCoupon.benefit === 'free_delivery') {
+        discount = Math.min(delivery, beforeCoupon);
+      } else if (appliedCoupon.type === "percent") {
+        discount = subtotal * Number(appliedCoupon.value || 0) / 100;
+      } else {
+        discount = Number(appliedCoupon.value || 0);
+      }
+      if (appliedCoupon.benefit !== 'free_delivery' && appliedCoupon.maxDiscount > 0) discount = Math.min(discount, Number(appliedCoupon.maxDiscount));
       discount = Math.min(discount, beforeCoupon);
     }
     return { subtotal, delivery, platformFee, couponDiscount: discount, grandTotal: Math.max(0, beforeCoupon - discount) };
@@ -1824,19 +1832,40 @@
   function renderCouponsAdmin(list) {
     const box=$("couponsList"); if(!box) return;
     const now=Date.now();
-    box.innerHTML=list.length?list.map(c=>{ const exp=c.validUntil && Number(c.validUntil)<now; return `<div class="admin-product"><div><strong>${escapeHtml(c.code)}</strong><small><br>${c.type==='percent'?Number(c.value||0)+'%':money(c.value)} off · Min ${money(c.minOrder||0)}<br>Uses: ${Number(c.usageCount||0)} / ${Number(c.usageLimit||0)||'∞'} · ${c.validUntil?('Until '+new Date(c.validUntil).toLocaleString('en-IN')):'No expiry'}</small></div><span class="status-badge">${!c.active?'Inactive':exp?'Expired':'Active'}</span><button class="delete-button" data-delete-coupon="${escapeHtml(c.id)}">Delete</button></div>`}).join(''):'<p class="modal-subtitle">Abhi koi coupon nahi hai.</p>';
+    box.innerHTML=list.length?list.map(c=>{ const exp=c.validUntil && Number(c.validUntil)<now; const privateText=c.visibility==='private' ? `🔒 Private · ${Number(c.privateCustomers?.length||0)} customer(s)` : '🌐 Public · Anyone'; const benefitText=c.benefit==='free_delivery' ? '🚚 Free delivery' : `${c.type==='percent'?Number(c.value||0)+'%':money(c.value)} off on products`; return `<div class="admin-product"><div><strong>${escapeHtml(c.code)}</strong><small><br>${benefitText} · Min ${money(c.minOrder||0)}<br>${privateText}<br>Uses: ${Number(c.usageCount||0)} / ${Number(c.usageLimit||0)||'∞'} · ${c.validUntil?('Until '+new Date(c.validUntil).toLocaleString('en-IN')):'No expiry'}</small></div><span class="status-badge">${!c.active?'Inactive':exp?'Expired':'Active'}</span><button class="delete-button" data-delete-coupon="${escapeHtml(c.id)}">Delete</button></div>`}).join(''):'<p class="modal-subtitle">Abhi koi coupon nahi hai.</p>';
     box.querySelectorAll('[data-delete-coupon]').forEach(b=>b.onclick=()=>deleteCoupon(b.dataset.deleteCoupon));
+  }
+
+  function normalizeCouponMobiles(raw) {
+    return String(raw||'').split(/[,\s]+/).map(v=>v.replace(/\D/g,'')).filter(v=>v.length>=10).map(v=>v.slice(-10)).filter((v,i,a)=>a.indexOf(v)===i);
+  }
+
+  function updateCouponFormVisibility() {
+    const privateWrap=$("couponPrivateCustomersWrap");
+    const typeWrap=$("couponTypeWrap");
+    const valueWrap=$("couponValueWrap");
+    const isPrivate=$("couponVisibility")?.value==='private';
+    const isFreeDelivery=$("couponBenefit")?.value==='free_delivery';
+    privateWrap?.classList.toggle('hidden', !isPrivate);
+    typeWrap?.classList.toggle('hidden', isFreeDelivery);
+    valueWrap?.classList.toggle('hidden', isFreeDelivery);
+    if($("couponValue")) $("couponValue").required=!isFreeDelivery;
   }
 
   async function saveCoupon(event) {
     event.preventDefault(); if(currentRole!=="admin") return;
     const code=$("couponCode").value.trim().toUpperCase().replace(/\s+/g,'');
-    const type=$("couponType").value; const value=Number($("couponValue").value||0);
-    if(!code || !value || value<0){alert("Coupon code aur valid discount value dein.");return;}
+    const benefit=$("couponBenefit")?.value || 'product_discount';
+    const type=$("couponType")?.value || 'flat';
+    const value=benefit==='free_delivery' ? 0 : Number($("couponValue").value||0);
+    const visibility=$("couponVisibility")?.value || 'public';
+    const privateCustomers=visibility==='private' ? normalizeCouponMobiles($("couponPrivateCustomers")?.value) : [];
+    if(!code || (benefit==='product_discount' && (!value || value<0))){alert("Coupon code aur valid discount value dein.");return;}
+    if(visibility==='private' && !privateCustomers.length){alert("Private coupon ke liye kam se kam 1 customer mobile number dein.");return;}
     const validUntil=$("couponValidUntil").value ? new Date($("couponValidUntil").value).getTime() : null;
     if(validUntil && validUntil<=Date.now()){alert("Expiry future me rakhein.");return;}
-    const data={code,type,value,minOrder:Math.max(0,Number($("couponMinOrder").value||0)),maxDiscount:Math.max(0,Number($("couponMaxDiscount").value||0)),usageLimit:Math.max(0,parseInt($("couponUsageLimit").value||0,10)),perCustomerLimit:Math.max(0,parseInt($("couponPerCustomerLimit").value||0,10)),validUntil,active:$("couponActive").checked,usageCount:0,updatedAt:Date.now(),createdBy:auth.currentUser.uid};
-    try { await db.collection("coupons").doc(code).set(data,{merge:true}); $("couponForm").reset(); $("couponActive").checked=true; await loadCoupons(); alert("Coupon save ho gaya."); } catch(e){alert(`Coupon save nahi hua: ${errorText(e)}`);}
+    const data={code,benefit,type,value,minOrder:Math.max(0,Number($("couponMinOrder").value||0)),maxDiscount:Math.max(0,Number($("couponMaxDiscount").value||0)),usageLimit:Math.max(0,parseInt($("couponUsageLimit").value||0,10)),perCustomerLimit:Math.max(0,parseInt($("couponPerCustomerLimit").value||0,10)),validUntil,visibility,privateCustomers,active:$("couponActive").checked,usageCount:0,updatedAt:Date.now(),createdBy:auth.currentUser.uid};
+    try { await db.collection("coupons").doc(code).set(data,{merge:true}); $("couponForm").reset(); $("couponActive").checked=true; updateCouponFormVisibility(); await loadCoupons(); alert("Coupon save ho gaya."); } catch(e){alert(`Coupon save nahi hua: ${errorText(e)}`);}
   }
 
   async function deleteCoupon(id) { if(currentRole!=="admin"||!id)return; if(!confirm("Is coupon ko delete karna hai?"))return; try{await db.collection("coupons").doc(id).delete();await loadCoupons();}catch(e){alert(`Coupon delete nahi hua: ${errorText(e)}`)} }
@@ -1852,7 +1881,12 @@
       if(c.validUntil && Date.now()>Number(c.validUntil)){throw new Error("Coupon expire ho gaya hai.");}
       if(Number(c.usageLimit||0)>0 && Number(c.usageCount||0)>=Number(c.usageLimit)){throw new Error("Coupon usage limit complete ho gayi hai.");}
       if(subtotal<Number(c.minOrder||0)){throw new Error(`Minimum order ${money(c.minOrder)} hona chahiye.`);}
-      appliedCoupon=c; msg.textContent=`Coupon applied: ${c.type==='percent'?Number(c.value)+'%':money(c.value)} off`; renderOrderCharges();
+      if(c.visibility==='private'){
+        const customerMobile=String($("customerNumber")?.value||'').replace(/\D/g,'').slice(-10);
+        const allowed=(Array.isArray(c.privateCustomers)?c.privateCustomers:[]).map(v=>String(v).replace(/\D/g,'').slice(-10));
+        if(!customerMobile || !allowed.includes(customerMobile)) throw new Error("Ye private coupon aapke mobile number ke liye valid nahi hai.");
+      }
+      appliedCoupon=c; msg.textContent=c.benefit==='free_delivery' ? 'Coupon applied: Free delivery 🚚' : `Coupon applied: ${c.type==='percent'?Number(c.value)+'%':money(c.value)} off`; renderOrderCharges();
     }catch(e){appliedCoupon=null;msg.textContent=errorText(e);renderOrderCharges();}
   }
 
