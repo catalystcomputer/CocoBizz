@@ -1954,6 +1954,14 @@
           const paid = Number(order.paidAmount || 0);
           const due = Math.max(0, Number(order.dueAmount ?? netTotal - paid));
           const credit = Math.max(0, Number(order.creditAmount ?? paid - netTotal));
+          const hasReturnableItem = (order.items || []).some(item => {
+            if (item?.returnable !== true) return false;
+            const key = String(item?.id ?? item?.productId ?? item?.sku ?? item?.name ?? "");
+            const returnedQty = returned
+              .filter(r => String(r?.id ?? r?.productId ?? r?.sku ?? r?.name ?? "") === key)
+              .reduce((sum, r) => sum + Number(r?.quantity || 0), 0);
+            return Number(item?.quantity || 0) - returnedQty > 0;
+          });
 
           return `
           <div class="admin-order" data-order-card="${escapeHtml(order.id)}">
