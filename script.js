@@ -410,7 +410,7 @@
         </div>
       </article>`;
     }).join("");
-    grid.querySelectorAll(".add-cart-button").forEach(button=>button.addEventListener("click",()=>{const id=button.dataset.id;cart[id]=Number(cart[id]||0)+1;updateCart();showCocoToast("Added to cart 🛒");}));
+    grid.querySelectorAll(".add-cart-button").forEach(button=>button.addEventListener("click",()=>{const id=button.dataset.id;cart[id]=Number(cart[id]||0)+1;updateCart();document.body.classList.remove("order-open");showCocoToast("Added to cart 🛒");}));
     grid.querySelectorAll("[data-product-detail]").forEach(el=>el.addEventListener("click",()=>openProductDetail(el.dataset.productDetail)));
     grid.querySelectorAll("[data-wishlist]").forEach(el=>el.addEventListener("click",()=>toggleWishlist(el.dataset.wishlist)));
     updateWishlistCount();
@@ -522,8 +522,8 @@
   function toggleWishlist(id){if(wishlistIds.includes(id))wishlistIds=wishlistIds.filter(x=>x!==id);else wishlistIds=[...wishlistIds,id];localStorage.setItem("cocobizWishlist",JSON.stringify(wishlistIds));renderProducts();renderWishlist();showCocoToast(wishlistIds.includes(id)?"Added to wishlist ❤️":"Removed from wishlist");}
   function openProductDetail(id){const p=products.find(x=>x.id===id);if(!p)return;const rate=publicRate(p),actual=Number(p.actualPrice||0),discount=actual>rate?Math.round((actual-rate)*100/Math.max(1,actual)):0;const box=$("productDetailBody");if(!box)return;box.innerHTML=`<div class="product-detail-layout"><img class="product-detail-image" src="${p.image||placeholderImage()}" alt="${escapeHtml(p.name)}"><div class="product-detail-info"><div class="product-category-badge">${p.category==='chocolate'?'🍫 Chocolate':p.category==='kitchen'?'🍳 Kitchen':'🎁 Gift'}</div><h2>${escapeHtml(p.name)}</h2><div><span class="detail-price">${money(rate)}</span>${actual>rate?`<span class="detail-old">${money(actual)}</span>`:''}</div>${discount?`<div class="detail-save">You save ${discount}% on this product</div>`:''}<p class="detail-description">${escapeHtml(p.description||'Quality product from CocoBiz.')}</p><div class="detail-meta"><div>🚚 <strong>Delivery:</strong> ${formatDeliveryRange(Date.now())}</div><div>🔐 <strong>Payment:</strong> UPI, COD${storeSettings.onlinePaymentEnabled?', Online':''}</div><div>📦 <strong>Stock:</strong> ${p.stock==null?'Available':Number(p.stock)>0?Number(p.stock)+' available':'Out of stock'}</div></div><div class="form-actions"><button class="secondary-button" type="button" onclick="document.getElementById('productDetailModal').classList.add('hidden')">Close</button><button class="primary-button" id="detailAddCart" type="button" ${p.stock!=null&&Number(p.stock)<=0?'disabled':''}>Add to Cart</button></div></div></div>`;$("productDetailModal")?.classList.remove("hidden");$("detailAddCart")?.addEventListener("click",()=>{cart[id]=Number(cart[id]||0)+1;updateCart();showCocoToast("Added to cart 🛒");$("productDetailModal")?.classList.add("hidden");});}
   function renderWishlist(){const box=$("wishlistBody");if(!box)return;const items=wishlistIds.map(id=>products.find(p=>p.id===id)).filter(Boolean);box.innerHTML=items.length?items.map(p=>`<div class="wishlist-item"><img src="${p.image||placeholderImage()}" alt="${escapeHtml(p.name)}"><h3>${escapeHtml(p.name)}</h3><strong>${money(publicRate(p))}</strong><div class="wishlist-actions"><button class="secondary-button" data-wish-view="${escapeHtml(p.id)}">View</button><button class="primary-button" data-wish-cart="${escapeHtml(p.id)}">Add to Cart</button></div></div>`).join(""): '<p class="modal-subtitle">Wishlist abhi empty hai.</p>';box.querySelectorAll('[data-wish-view]').forEach(b=>b.onclick=()=>openProductDetail(b.dataset.wishView));box.querySelectorAll('[data-wish-cart]').forEach(b=>b.onclick=()=>{const id=b.dataset.wishCart;cart[id]=Number(cart[id]||0)+1;updateCart();showCocoToast('Added to cart 🛒');});}
-  function renderMyOrders(){const box=$("myOrdersBody");if(!box)return;const list=JSON.parse(localStorage.getItem('cocobizMyOrders')||'[]');box.innerHTML=list.length?list.slice(0,20).map(o=>`<div class="my-order-card"><div class="order-head"><strong>${escapeHtml(o.id)}</strong><span class="status-badge">${escapeHtml(o.status||'Order Placed')}</span></div><small>${escapeHtml(o.date||'')} • ${money(o.total||0)}</small><div class="form-actions" style="margin-top:10px"><button class="primary-button" data-my-track="${escapeHtml(o.id)}">Track Order</button></div></div>`).join(''):'<p class="modal-subtitle">Abhi is device par koi order saved nahi hai. Order place karne ke baad yahan dikhega.</p>';box.querySelectorAll('[data-my-track]').forEach(b=>b.onclick=()=>{ $("myOrdersModal")?.classList.add('hidden'); window.cocoOpenTrackOrder?.({orderId:b.dataset.myTrack}); });}
-  function saveLocalCustomerOrder(order){const list=JSON.parse(localStorage.getItem('cocobizMyOrders')||'[]');const next=[{id:order.clientId,total:order.total,date:order.date,status:'Order Placed'},...list.filter(x=>x.id!==order.clientId)].slice(0,20);localStorage.setItem('cocobizMyOrders',JSON.stringify(next));}
+  function renderMyOrders(){const box=$("myOrdersBody");if(!box)return;const list=JSON.parse(localStorage.getItem('cocobizMyOrders')||'[]');box.innerHTML=list.length?list.slice(0,20).map(o=>`<div class="my-order-card"><div class="order-head"><strong>${escapeHtml(o.id)}</strong><span class="status-badge">${escapeHtml(o.status||'Order Placed')}</span></div><small>${escapeHtml(o.date||'')} • ${money(o.total||0)}</small><div class="form-actions" style="margin-top:10px"><button class="primary-button" data-my-track="${escapeHtml(o.id)}">Track Order</button></div></div>`).join(''):'<p class="modal-subtitle">Abhi is device par koi order saved nahi hai. Order place karne ke baad yahan dikhega.</p>';box.querySelectorAll('[data-my-track]').forEach(b=>b.onclick=()=>{ const order=list.find(o=>o.id===b.dataset.myTrack); $("myOrdersModal")?.classList.add('hidden'); window.cocoOpenTrackOrder?.({orderId:b.dataset.myTrack,mobile:order?.mobile||''}); setTimeout(()=>$("trackOrderForm")?.requestSubmit(),150); });}
+  function saveLocalCustomerOrder(order){const list=JSON.parse(localStorage.getItem('cocobizMyOrders')||'[]');const next=[{id:order.clientId,total:order.total,date:order.date,status:'Order Placed',mobile:order.customer?.number||''},...list.filter(x=>x.id!==order.clientId)].slice(0,20);localStorage.setItem('cocobizMyOrders',JSON.stringify(next));}
 
   function bindEvents() {
     $("openOrderButton")?.addEventListener("click", openOrderModal);
@@ -1898,9 +1898,14 @@
         }
       };
     }
+    ["orderModal", "myOrdersModal", "wishlistModal", "productDetailModal", "customerAccountModal"].forEach(id => {
+      const el = $(id);
+      if (el) { el.classList.add("hidden"); el.style.display = "none"; }
+    });
+    document.body.classList.remove("order-open");
     modal.classList.remove("hidden");
     modal.style.display = "grid";
-    modal.style.zIndex = "100000";
+    modal.style.zIndex = "1000000";
     modal.setAttribute("aria-hidden", "false");
   }
 
