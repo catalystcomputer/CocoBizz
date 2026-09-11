@@ -401,7 +401,7 @@
         <button type="button" class="wishlist-button ${wish?'active':''}" data-wishlist="${escapeHtml(product.id)}" aria-label="${wish?'Remove from':'Add to'} wishlist">${wish?'♥':'♡'}</button>
         <img src="${product.image || placeholderImage()}" alt="${escapeHtml(product.name)}" data-product-detail="${escapeHtml(product.id)}">
         <div class="product-content">
-          <div class="product-category-badge">${product.category === "chocolate" ? "🍫 Chocolate" : product.category === "kitchen" ? "🍳 Kitchen" : "🎁 Gift"}</div>
+          <div class="product-category-badge">${product.category === "chocolate" ? "🍫 Chocolate" : product.category === "kitchen" ? "🍳 Kitchen" : product.category === "electronic" ? "📱 Electronics" : "🎁 Gift"}</div>
           <h3 data-product-detail="${escapeHtml(product.id)}">${escapeHtml(product.name)}</h3>
           <p>${escapeHtml(product.description || "Quality product from CocoBiz.")}</p>
           <div class="product-badge-row"><span class="price"><strong>${money(rate)}</strong>${actual>rate?`<span class="old-price">${money(actual)}</span>`:""}</span>${discount?`<span class="discount-badge">${discount}% OFF</span>`:""}</div>
@@ -441,6 +441,7 @@
           quantity: safeQuantity,
           price,
           costPrice: product.costPrice == null ? null : Number(product.costPrice),
+          returnable: product.returnable === true,
           total: price * safeQuantity
         };
       })
@@ -530,7 +531,7 @@
   function showCocoToast(message){const t=$("cocoToast");if(!t)return;t.textContent=message;t.classList.add("show");clearTimeout(window.__cocoToastTimer);window.__cocoToastTimer=setTimeout(()=>t.classList.remove("show"),1800);}
   function updateWishlistCount(){if($("wishlistCount"))$("wishlistCount").textContent=wishlistIds.length;}
   function toggleWishlist(id){if(wishlistIds.includes(id))wishlistIds=wishlistIds.filter(x=>x!==id);else wishlistIds=[...wishlistIds,id];localStorage.setItem("cocobizWishlist",JSON.stringify(wishlistIds));renderProducts();renderWishlist();showCocoToast(wishlistIds.includes(id)?"Added to wishlist ❤️":"Removed from wishlist");}
-  function openProductDetail(id){const p=products.find(x=>x.id===id);if(!p)return;const rate=publicRate(p),actual=Number(p.actualPrice||0),discount=actual>rate?Math.round((actual-rate)*100/Math.max(1,actual)):0;const box=$("productDetailBody");if(!box)return;box.innerHTML=`<div class="product-detail-layout"><img class="product-detail-image" src="${p.image||placeholderImage()}" alt="${escapeHtml(p.name)}"><div class="product-detail-info"><div class="product-category-badge">${p.category==='chocolate'?'🍫 Chocolate':p.category==='kitchen'?'🍳 Kitchen':'🎁 Gift'}</div><h2>${escapeHtml(p.name)}</h2><div><span class="detail-price">${money(rate)}</span>${actual>rate?`<span class="detail-old">${money(actual)}</span>`:''}</div>${discount?`<div class="detail-save">You save ${discount}% on this product</div>`:''}<p class="detail-description">${escapeHtml(p.description||'Quality product from CocoBiz.')}</p><div class="detail-meta"><div>🚚 <strong>Delivery:</strong> ${formatDeliveryRange(Date.now())}</div><div>🔐 <strong>Payment:</strong> UPI, COD${storeSettings.onlinePaymentEnabled?', Online':''}</div><div>📦 <strong>Stock:</strong> ${p.stock==null?'Available':Number(p.stock)>0?Number(p.stock)+' available':'Out of stock'}</div></div><div class="form-actions"><button class="secondary-button" type="button" onclick="document.getElementById('productDetailModal').classList.add('hidden')">Close</button><button class="primary-button" id="detailAddCart" type="button" ${p.stock!=null&&Number(p.stock)<=0?'disabled':''}>Add to Cart</button></div></div></div>`;$("productDetailModal")?.classList.remove("hidden");$("detailAddCart")?.addEventListener("click",()=>{cart[id]=Number(cart[id]||0)+1;updateCart();showCocoToast("Added to cart 🛒");$("productDetailModal")?.classList.add("hidden");});}
+  function openProductDetail(id){const p=products.find(x=>x.id===id);if(!p)return;const rate=publicRate(p),actual=Number(p.actualPrice||0),discount=actual>rate?Math.round((actual-rate)*100/Math.max(1,actual)):0;const box=$("productDetailBody");if(!box)return;box.innerHTML=`<div class="product-detail-layout"><img class="product-detail-image" src="${p.image||placeholderImage()}" alt="${escapeHtml(p.name)}"><div class="product-detail-info"><div class="product-category-badge">${p.category==='chocolate'?'🍫 Chocolate':p.category==='kitchen'?'🍳 Kitchen':p.category==='electronic'?'📱 Electronics':'🎁 Gift'}</div><h2>${escapeHtml(p.name)}</h2><div><span class="detail-price">${money(rate)}</span>${actual>rate?`<span class="detail-old">${money(actual)}</span>`:''}</div>${discount?`<div class="detail-save">You save ${discount}% on this product</div>`:''}<p class="detail-description">${escapeHtml(p.description||'Quality product from CocoBiz.')}</p><div class="detail-meta"><div>🚚 <strong>Delivery:</strong> ${formatDeliveryRange(Date.now())}</div><div>🔐 <strong>Payment:</strong> UPI, COD${storeSettings.onlinePaymentEnabled?', Online':''}</div><div>📦 <strong>Stock:</strong> ${p.stock==null?'Available':Number(p.stock)>0?Number(p.stock)+' available':'Out of stock'}</div></div><div class="form-actions"><button class="secondary-button" type="button" onclick="document.getElementById('productDetailModal').classList.add('hidden')">Close</button><button class="primary-button" id="detailAddCart" type="button" ${p.stock!=null&&Number(p.stock)<=0?'disabled':''}>Add to Cart</button></div></div></div>`;$("productDetailModal")?.classList.remove("hidden");$("detailAddCart")?.addEventListener("click",()=>{cart[id]=Number(cart[id]||0)+1;updateCart();showCocoToast("Added to cart 🛒");$("productDetailModal")?.classList.add("hidden");});}
   function renderWishlist(){const box=$("wishlistBody");if(!box)return;const items=wishlistIds.map(id=>products.find(p=>p.id===id)).filter(Boolean);box.innerHTML=items.length?items.map(p=>`<div class="wishlist-item"><img src="${p.image||placeholderImage()}" alt="${escapeHtml(p.name)}"><h3>${escapeHtml(p.name)}</h3><strong>${money(publicRate(p))}</strong><div class="wishlist-actions"><button class="secondary-button" data-wish-view="${escapeHtml(p.id)}">View</button><button class="primary-button" data-wish-cart="${escapeHtml(p.id)}">Add to Cart</button></div></div>`).join(""): '<p class="modal-subtitle">Wishlist abhi empty hai.</p>';box.querySelectorAll('[data-wish-view]').forEach(b=>b.onclick=()=>openProductDetail(b.dataset.wishView));box.querySelectorAll('[data-wish-cart]').forEach(b=>b.onclick=()=>{const id=b.dataset.wishCart;cart[id]=Number(cart[id]||0)+1;updateCart();showCocoToast('Added to cart 🛒');});}
   function renderMyOrders(){const box=$("myOrdersBody");if(!box)return;const list=JSON.parse(localStorage.getItem('cocobizMyOrders')||'[]');box.innerHTML=list.length?list.slice(0,20).map(o=>`<div class="my-order-card"><div class="order-head"><strong>${escapeHtml(o.id)}</strong><span class="status-badge">${escapeHtml(o.status||'Order Placed')}</span></div><small>${escapeHtml(o.date||'')} • ${money(o.total||0)}</small><div class="form-actions" style="margin-top:10px"><button class="primary-button" data-my-track="${escapeHtml(o.id)}">Track Order</button></div></div>`).join(''):'<p class="modal-subtitle">Abhi is device par koi order saved nahi hai. Order place karne ke baad yahan dikhega.</p>';box.querySelectorAll('[data-my-track]').forEach(b=>b.onclick=()=>{ const order=list.find(o=>o.id===b.dataset.myTrack); $("myOrdersModal")?.classList.add('hidden'); window.cocoOpenTrackOrder?.({orderId:b.dataset.myTrack,mobile:order?.mobile||''}); setTimeout(()=>$("trackOrderForm")?.requestSubmit(),150); });}
   function saveLocalCustomerOrder(order){const list=JSON.parse(localStorage.getItem('cocobizMyOrders')||'[]');const next=[{id:order.clientId,total:order.total,date:order.date,status:'Order Placed',mobile:order.customer?.number||''},...list.filter(x=>x.id!==order.clientId)].slice(0,20);localStorage.setItem('cocobizMyOrders',JSON.stringify(next));}
@@ -570,7 +571,6 @@
     });
     // Clear only the recovery flag when the customer explicitly closes the confirmation.
     document.querySelector('[data-close="orderSuccessModal"]')?.addEventListener("click", () => {
-      try { sessionStorage.removeItem("cocobiz_pending_confirmation"); } catch (_) {}
     });
 
     $("loginForm")?.addEventListener("submit", loginAdmin);
@@ -1129,6 +1129,7 @@
     const name = $("productName").value.trim();
     const description = $("productDescription").value.trim();
     const category = $("productCategory")?.value || oldProduct?.category || "gift";
+    const returnable = $("productReturnable")?.value === "true";
     const actualPrice = Number($("actualPrice").value);
     const salePrice = Number($("salePrice").value);
     const costRaw = $("costPrice")?.value.trim();
@@ -1171,6 +1172,7 @@
         name,
         description,
         category,
+        returnable,
         actualPrice,
         salePrice,
         costPrice,
@@ -1215,6 +1217,7 @@
     $("productName").value = product.name || "";
     $("productDescription").value = product.description || "";
     if ($("productCategory")) $("productCategory").value = product.category || "gift";
+    if ($("productReturnable")) $("productReturnable").value = product.returnable === true ? "true" : "false";
     $("actualPrice").value = product.actualPrice ?? "";
     $("salePrice").value = product.salePrice ?? "";
     if ($("costPrice")) $("costPrice").value = product.costPrice ?? "";
@@ -1240,6 +1243,7 @@
   function resetProductForm() {
     $("productForm")?.reset();
     $("productId").value = "";
+    if ($("productReturnable")) $("productReturnable").value = "false";
     $("saveButton").textContent = "Add Product";
     $("cancelEdit")?.classList.add("hidden");
   }
@@ -1859,16 +1863,14 @@
       // from covering the confirmation modal on slower devices.
       $("orderModal")?.classList.add("hidden");
       document.body.classList.remove("order-open");
-      try { sessionStorage.setItem("cocobiz_pending_confirmation", JSON.stringify({ orderId: clientId, mobile: data.customer.number })); } catch (_) {}
-
       saveLocalCustomerOrder(data);
       cart = {};
       updateCart();
       $("orderForm").reset();
       appliedCoupon = null; customerLocation = null; setCheckoutStep(1);
 
-      // Let the browser finish hiding the large checkout before opening the small success popup.
-      requestAnimationFrame(() => setTimeout(() => showOrderSuccess(data.customer.number, clientId), 0));
+      // Show the confirmation immediately after the order is accepted.
+      showOrderSuccess(data.customer.number, clientId);
     } catch (error) {
       // Keep a local copy so it can be retried automatically after connectivity returns.
       localStorage.setItem(
@@ -1918,20 +1920,6 @@
     modal.style.zIndex = "1000000";
     modal.setAttribute("aria-hidden", "false");
   }
-
-  function restorePendingOrderConfirmation() {
-    try {
-      const raw = sessionStorage.getItem("cocobiz_pending_confirmation");
-      if (!raw) return;
-      const pending = JSON.parse(raw);
-      if (pending?.orderId && pending?.mobile) showOrderSuccess(pending.mobile, pending.orderId);
-    } catch (_) {}
-  }
-
-  window.addEventListener("pageshow", restorePendingOrderConfirmation);
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") restorePendingOrderConfirmation();
-  });
 
   async function retryPendingOrders() {
     if (!db || !navigator.onLine) return;
@@ -2016,7 +2004,7 @@
               ${due > 0 && ["accepted","received"].includes(order.status) ? `<button class="secondary-button" data-payment-order="${escapeHtml(order.id)}">💰 Received Payment</button>` : ""}
               ${paid > 0 ? `<button class="secondary-button" data-payment-message-order="${escapeHtml(order.id)}">💬 Payment Message</button>` : ""}
               ${currentRole === "admin" && Array.isArray(order.paymentHistory) && order.paymentHistory.length ? `<button class="secondary-button" data-undo-payment-order="${escapeHtml(order.id)}">↩ Undo Last Payment</button>` : ""}
-              <button class="secondary-button" data-return-order="${escapeHtml(order.id)}">↩ Return Item</button>
+              ${hasReturnableItem ? `<button class="secondary-button" data-return-order="${escapeHtml(order.id)}">↩ Return Item</button>` : ""}
               <button class="secondary-button" data-bill-order="${escapeHtml(order.id)}">🧾 Bill</button>
               <a class="secondary-button" href="tel:${escapeHtml(order.customer?.number || "")}">☎ Contact</a>
               ${(currentRole === "admin" || (currentRole === "salesman" && order.salesmanId === auth.currentUser?.uid && ["salesman_pending","pending_admin"].includes(order.status))) ? `<button class="delete-button" data-delete-order="${escapeHtml(order.id)}">🗑 Delete Order</button>` : ""}
@@ -2313,6 +2301,7 @@
     // values inside arrays, so always use a stable fallback key.
     const itemKey = (item) => String(item?.id ?? item?.productId ?? item?.sku ?? item?.name ?? "");
     const available = (order.items || []).filter(item => {
+      if (item.returnable !== true) return false;
       const key = itemKey(item);
       const returnedQty = (order.returns || [])
         .filter(r => itemKey(r) === key)
@@ -2321,7 +2310,7 @@
     });
 
     if (!available.length) {
-      alert("Is order ke saare items already return ho chuke hain.");
+      alert("Is order ke products par return available nahi hai ya saare allowed returns use ho chuke hain.");
       return;
     }
 
