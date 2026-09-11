@@ -602,14 +602,15 @@
       if (prefill.mobile && $("trackMobile")) $("trackMobile").value = String(prefill.mobile).replace(/\D/g, "").slice(-10);
       setTimeout(() => $("trackOrderId")?.focus(), 50);
     };
+    // Expose the main-page tracker immediately so the header button can open it even if another UI handler is active.
+    window.openCocoBizTrackOrder = openTrackOrder;
+    window.cocoOpenTrackOrder = openTrackOrder;
     // Fresh main-page Track Order button: opens the tracking popup directly on the home page.
     $("trackOrderMainButton")?.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
       openTrackOrder();
     });
-    window.openCocoBizTrackOrder = openTrackOrder;
-    window.cocoOpenTrackOrder = openTrackOrder;
     $("trackOrderForm")?.addEventListener("submit", trackOrder);
     $("customerPaymentMethod")?.addEventListener("change", renderOrderCharges);
     $("upiPayButton")?.addEventListener("click", event => {
