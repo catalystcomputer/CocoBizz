@@ -558,6 +558,10 @@
         if (button.dataset.close === "orderModal") document.body.classList.remove("order-open");
       });
     });
+    // Clear only the recovery flag when the customer explicitly closes the confirmation.
+    document.querySelector('[data-close="orderSuccessModal"]')?.addEventListener("click", () => {
+      try { sessionStorage.removeItem("cocobiz_pending_confirmation"); } catch (_) {}
+    });
 
     $("loginForm")?.addEventListener("submit", loginAdmin);
     $("logoutButton")?.addEventListener("click", logoutAdmin);
@@ -1808,8 +1812,8 @@
     const saveCloud = async () => {
       data.mobileHash = await hashTrackingMobile(data.customer.number);
       const ref = await db.collection("orders").add(data);
-      // Tracking sync must never delay or block the final order confirmation.
-      try { await syncPublicTracking(data); } catch (trackingError) { console.warn("Tracking sync deferred:", trackingError); }
+      // Public tracking sync runs in the background so it can never delay the success popup.
+      Promise.resolve(syncPublicTracking(data)).catch(trackingError => console.warn("Tracking sync deferred:", trackingError));
       return ref;
     };
 
@@ -1834,17 +1838,20 @@
 
       localStorage.removeItem("cocobiz_pending_order_" + clientId);
 
-      // Order confirmation is shown directly on the website.
-      // Do NOT automatically open/send the order on WhatsApp.
-      showOrderSuccess(data.customer.number, clientId);
-      saveLocalCustomerOrder(data);
+      // Close checkout completely before showing success. This prevents the checkout overlay
+      // from covering the confirmation modal on slower devices.
+      $("orderModal")?.classList.add("hidden");
+      document.body.classList.remove("order-open");
+      try { sessionStorage.setItem("cocobiz_pending_confirmation", JSON.stringify({ orderId: clientId, mobile: data.customer.number })); } catch (_) {}
 
+      saveLocalCustomerOrder(data);
       cart = {};
       updateCart();
       $("orderForm").reset();
       appliedCoupon = null; customerLocation = null; setCheckoutStep(1);
-      $("orderModal")?.classList.add("hidden");
-      document.body.classList.remove("order-open");
+
+      // Let the browser finish hiding the large checkout before opening the small success popup.
+      requestAnimationFrame(() => setTimeout(() => showOrderSuccess(data.customer.number, clientId), 0));
     } catch (error) {
       // Keep a local copy so it can be retried automatically after connectivity returns.
       localStorage.setItem(
@@ -1888,7 +1895,6 @@
     modal.style.display = "grid";
     modal.style.zIndex = "100000";
     modal.setAttribute("aria-hidden", "false");
-    try { sessionStorage.removeItem("cocobiz_pending_confirmation"); } catch (_) {}
   }
 
   function restorePendingOrderConfirmation() {
@@ -2722,7 +2728,7 @@
       };
       // Check frequently enough that a scheduled start/end changes almost
       // immediately, even when the customer leaves the page open.
-      setInterval(refreshScheduledOffer, 10000);
+      setInterval(refreshScheduledOffer, 60000);
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") refreshScheduledOffer();
       });
