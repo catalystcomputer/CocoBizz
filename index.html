@@ -184,6 +184,7 @@
         <button class="admin-tab admin-only-tab" id="offersTab">Offers</button>
         <button class="admin-tab admin-only-tab" id="settingsTab">Store Settings</button>
         <button class="admin-tab admin-only-tab" id="couponsTab">Coupons</button>
+        <button class="admin-tab admin-only-tab" id="dropshippingTab">Dropshipping</button>
       </div>
 
       <div id="dashboardPanel">
@@ -342,6 +343,27 @@
           </div>
 
           <div class="form-group full-width">
+            <label for="productDropshipEnabled">Dropshipping</label>
+            <select id="productDropshipEnabled">
+              <option value="false">No — normal CocoBiz stock</option>
+              <option value="true">Yes — supplier se direct ship</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="productSupplierName">Supplier name <small>(optional)</small></label>
+            <input id="productSupplierName" placeholder="Supplier / wholesaler name">
+          </div>
+          <div class="form-group">
+            <label for="productSupplierContact">Supplier contact <small>(optional)</small></label>
+            <input id="productSupplierContact" placeholder="Mobile / WhatsApp">
+          </div>
+          <div class="form-group full-width">
+            <label for="productSupplierLink">Supplier product link <small>(optional)</small></label>
+            <input id="productSupplierLink" type="url" placeholder="https://supplier-product-link...">
+          </div>
+
+          <div class="form-group full-width">
             <label for="productReturnable">Return policy</label>
             <select id="productReturnable">
               <option value="false">No return / No replacement</option>
@@ -361,6 +383,16 @@
         </form>
 
         <div class="admin-products" id="adminProducts"></div>
+      </div>
+
+      <div id="dropshippingPanel" class="hidden">
+        <p class="modal-subtitle">Dropshipping products aur suppliers ka private management. Customer ko supplier details nahi dikhengi.</p>
+        <div class="sale-summary admin-kpi-grid">
+          <div><small>Dropship Products</small><strong id="dropshipProductMetric">0</strong></div>
+          <div><small>Suppliers</small><strong id="dropshipSupplierMetric">0</strong></div>
+          <div><small>Potential Margin</small><strong id="dropshipMarginMetric">₹0</strong></div>
+        </div>
+        <div class="admin-products" id="dropshipProductsList"></div>
       </div>
 
       <div id="couponsPanel" class="hidden">

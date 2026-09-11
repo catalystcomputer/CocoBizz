@@ -737,6 +737,10 @@
       showAdminPanel("orders")
     );
 
+    $("dropshippingTab")?.addEventListener("click", () =>
+      showAdminPanel("dropshipping")
+    );
+
     $("customerAccountBody")?.addEventListener("click", event => {
       const reminder = event.target.closest("[data-remind-customer]");
       const bill = event.target.closest("[data-bill-customer-order]");
@@ -1053,7 +1057,8 @@
       salesmen: "salesmenPanel",
       offers: "offersPanel",
       settings: "settingsPanel",
-      coupons: "couponsPanel"
+      coupons: "couponsPanel",
+      dropshipping: "dropshippingPanel"
     };
 
     Object.values(panels).forEach(id => {
@@ -1076,6 +1081,7 @@
     if (name === "offers" && currentRole === "admin") loadOffer();
     if (name === "settings" && currentRole === "admin") renderStoreSettings();
     if (name === "coupons" && currentRole === "admin") loadCoupons();
+    if (name === "dropshipping" && currentRole === "admin") renderDropshipping();
     if (name === "products" && currentRole === "salesman") renderSalesmanProducts();
   }
 
@@ -1127,6 +1133,7 @@
                 <br>Stock: ${product.stock == null ? "Not tracked" : Number(product.stock)}
                 <br>Category: ${escapeHtml(product.category || "gift")} · ${product.returnable === true ? "Return allowed" : "No return"}
                 <br>Status: ${product.active === false ? "Inactive" : "Active"}
+                ${product.dropshipEnabled === true ? `<br>🚚 Dropship: ${escapeHtml(product.supplierName || "Supplier not set")} · Supplier cost: ${product.costPrice == null ? "Not set" : money(product.costPrice)}` : ""}
               </small>
             </div>
 
@@ -1198,6 +1205,31 @@
     });
   }
 
+  function renderDropshipping() {
+    const list = $("dropshipProductsList");
+    if (!list) return;
+    const items = products.filter(p => p.dropshipEnabled === true);
+    const suppliers = new Set(items.map(p => (p.supplierName || "").trim()).filter(Boolean));
+    const margin = items.reduce((sum, p) => {
+      const sell = Number(p.salePrice || 0);
+      const cost = Number(p.costPrice || 0);
+      return sum + Math.max(0, sell - cost);
+    }, 0);
+    if ($("dropshipProductMetric")) $("dropshipProductMetric").textContent = String(items.length);
+    if ($("dropshipSupplierMetric")) $("dropshipSupplierMetric").textContent = String(suppliers.size);
+    if ($("dropshipMarginMetric")) $("dropshipMarginMetric").textContent = money(margin);
+    list.innerHTML = items.length ? items.map(p => {
+      const sell = Number(p.salePrice || 0), cost = Number(p.costPrice || 0);
+      const profit = sell - cost;
+      return `<div class="admin-product">
+        <img src="${p.image || placeholderImage()}" alt="${escapeHtml(p.name)}">
+        <div><strong>${escapeHtml(p.name)}</strong><small><br>Customer price: ${money(sell)}<br>Supplier cost: ${p.costPrice == null ? "Not set" : money(cost)}<br>Margin: ${money(profit)}<br>Supplier: ${escapeHtml(p.supplierName || "Not set")}<br>Contact: ${escapeHtml(p.supplierContact || "Not set")}${p.supplierLink ? `<br><a href="${escapeHtml(p.supplierLink)}" target="_blank" rel="noopener">Supplier product link</a>` : ""}</small></div>
+        <div class="admin-product-actions"><button class="secondary-button" type="button" data-edit-dropship="${escapeHtml(p.id)}">Edit Product</button></div>
+      </div>`;
+    }).join("") : '<p class="modal-subtitle">Abhi koi dropshipping product enable nahi hai. Product edit karke Dropshipping = Yes karein.</p>';
+    list.querySelectorAll("[data-edit-dropship]").forEach(btn => btn.onclick = () => { showAdminPanel("products"); editProduct(btn.dataset.editDropship); });
+  }
+
   async function saveProduct(event) {
     event.preventDefault();
 
@@ -1209,6 +1241,10 @@
     const description = $("productDescription").value.trim();
     const category = $("productCategory")?.value || oldProduct?.category || "gift";
     const returnable = $("productReturnable")?.value === "true";
+    const dropshipEnabled = $("productDropshipEnabled")?.value === "true";
+    const supplierName = $("productSupplierName")?.value.trim() || "";
+    const supplierContact = $("productSupplierContact")?.value.trim() || "";
+    const supplierLink = $("productSupplierLink")?.value.trim() || "";
     const actualPrice = Number($("actualPrice").value);
     const salePrice = Number($("salePrice").value);
     const costRaw = $("costPrice")?.value.trim();
@@ -1252,6 +1288,10 @@
         description,
         category,
         returnable,
+        dropshipEnabled,
+        supplierName,
+        supplierContact,
+        supplierLink,
         actualPrice,
         salePrice,
         costPrice,
@@ -1298,6 +1338,10 @@
     $("productDescription").value = product.description || "";
     if ($("productCategory")) $("productCategory").value = product.category || "gift";
     if ($("productReturnable")) $("productReturnable").value = product.returnable === true ? "true" : "false";
+    if ($("productDropshipEnabled")) $("productDropshipEnabled").value = product.dropshipEnabled === true ? "true" : "false";
+    if ($("productSupplierName")) $("productSupplierName").value = product.supplierName || "";
+    if ($("productSupplierContact")) $("productSupplierContact").value = product.supplierContact || "";
+    if ($("productSupplierLink")) $("productSupplierLink").value = product.supplierLink || "";
     $("actualPrice").value = product.actualPrice ?? "";
     $("salePrice").value = product.salePrice ?? "";
     if ($("costPrice")) $("costPrice").value = product.costPrice ?? "";
@@ -1339,6 +1383,10 @@
     $("productForm")?.reset();
     $("productId").value = "";
     if ($("productReturnable")) $("productReturnable").value = "false";
+    if ($("productDropshipEnabled")) $("productDropshipEnabled").value = "false";
+    if ($("productSupplierName")) $("productSupplierName").value = "";
+    if ($("productSupplierContact")) $("productSupplierContact").value = "";
+    if ($("productSupplierLink")) $("productSupplierLink").value = "";
     $("saveButton").textContent = "Add Product";
     $("cancelEdit")?.classList.add("hidden");
   }
