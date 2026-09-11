@@ -23,7 +23,7 @@
     </nav>
     <div class="header-actions">
       <button type="button" class="secondary-button track-header-button" id="trackOrderMainButton" onclick="if(window.openCocoBizTrackOrder){window.openCocoBizTrackOrder();} return false;">Track Order</button>
-      <button class="order-button" id="openOrderButton">🛒 Cart <span id="cartCount">0</span></button>
+      <button type="button" class="order-button" id="openOrderButton" onclick="if(window.cocoOpenOrderModal){window.cocoOpenOrderModal();} return false;">🛒 Cart <span id="cartCount">0</span></button>
       <button class="admin-button hidden" id="adminButton" aria-hidden="true" tabindex="-1">Admin Panel</button>
     </div>
   </header>
@@ -97,7 +97,7 @@
 
   <div class="bottom-order-bar hidden" id="bottomOrderBar">
     <span><strong id="bottomCartCount">0</strong> item(s) selected</span>
-    <button class="primary-button" id="bottomOrderButton">Continue Order</button>
+    <button type="button" class="primary-button" id="bottomOrderButton" onclick="if(window.cocoOpenOrderModal){window.cocoOpenOrderModal();} return false;">Continue Order</button>
   </div>
 
   <div class="modal hidden" id="loginModal">

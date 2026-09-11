@@ -507,15 +507,25 @@
     appliedCoupon = null; customerLocation = null;
     if (!Object.keys(cart).length) {
       alert("पहले कोई product select करें।");
-      return;
+      return false;
     }
 
-    renderSelectedProducts();
-    setCheckoutStep(1);
-    $("orderModal")?.classList.remove("hidden");
+    const modal = $("orderModal");
+    if (!modal) return false;
+
+    // Keep the Cart/Continue buttons reliable even if a previous overlay left a
+    // stale class/style behind. Do not wait for location or Firebase here.
+    try { renderSelectedProducts(); } catch (e) { console.warn("Cart render warning:", e); }
+    try { setCheckoutStep(1); } catch (e) { console.warn("Checkout step warning:", e); }
+    modal.classList.remove("hidden");
+    modal.style.display = "grid";
+    modal.style.zIndex = "999999";
+    modal.setAttribute("aria-hidden", "false");
     document.body.classList.add("order-open");
-    setTimeout(() => useMyLocation(true), 250);
+    setTimeout(() => { try { useMyLocation(true); } catch (_) {} }, 250);
+    return false;
   }
+  window.cocoOpenOrderModal = openOrderModal;
 
   function showCocoToast(message){const t=$("cocoToast");if(!t)return;t.textContent=message;t.classList.add("show");clearTimeout(window.__cocoToastTimer);window.__cocoToastTimer=setTimeout(()=>t.classList.remove("show"),1800);}
   function updateWishlistCount(){if($("wishlistCount"))$("wishlistCount").textContent=wishlistIds.length;}
@@ -526,8 +536,8 @@
   function saveLocalCustomerOrder(order){const list=JSON.parse(localStorage.getItem('cocobizMyOrders')||'[]');const next=[{id:order.clientId,total:order.total,date:order.date,status:'Order Placed',mobile:order.customer?.number||''},...list.filter(x=>x.id!==order.clientId)].slice(0,20);localStorage.setItem('cocobizMyOrders',JSON.stringify(next));}
 
   function bindEvents() {
-    $("openOrderButton")?.addEventListener("click", openOrderModal);
-    $("bottomOrderButton")?.addEventListener("click", openOrderModal);
+    $("openOrderButton")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); openOrderModal(); });
+    $("bottomOrderButton")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); openOrderModal(); });
     $("productSearch")?.addEventListener("input", event => {
       searchTerm = event.target.value.trim().toLowerCase();
       renderProducts();
