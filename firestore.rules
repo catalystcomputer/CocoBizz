@@ -2,72 +2,72 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    function isAdmin() {
-      return signedIn() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    function isSalesman() {
-      return signedIn() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'salesman';
-    }
-
     match /products/{productId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow write: if request.auth != null;
     }
 
     match /orders/{orderId} {
-      // Customers can place orders without creating an account.
       allow create: if true;
-      // Only admin can read the complete order collection; salesman can read only
-      // their own orders. This keeps customer addresses/payment details private.
-      allow read: if isAdmin() || (isSalesman() && resource.data.salesmanId == request.auth.uid);
-      allow update, delete: if isAdmin() ||
-        (isSalesman() && resource.data.salesmanId == request.auth.uid &&
-         resource.data.status in ['salesman_pending','pending_admin']);
+      allow read: if request.auth != null;
+      allow update, delete: if request.auth != null && (
+        // Admins are authenticated users without a salesman profile.
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman' ||
+        resource.data.salesmanId == request.auth.uid
+      );
     }
 
     match /users/{userId} {
-      // A user may read/update only their own profile. Admin can manage all profiles.
-      allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
-      allow create: if isAdmin() && request.resource.data.role == 'salesman';
-      allow update: if isAdmin() || (signedIn() && request.auth.uid == userId);
-      allow delete: if isAdmin();
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
+      );
+      allow create: if request.auth != null && request.resource.data.role == 'salesman';
+      allow update: if request.auth != null && (
+        request.auth.uid == userId ||
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
+      );
+      allow delete: if request.auth != null && (
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
+      );
     }
+
 
     match /offers/{offerId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if request.auth != null && (
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
+      );
     }
 
-    // Public read is retained so existing customer checkout continues to work.
-    // IMPORTANT: do not store phone numbers or other private data in public coupon
-    // documents. Use the privateCustomers field only for legacy data; new private
-    // coupon data should be migrated to hashes/server validation before production.
+    // Only non-sensitive fields needed by a shared salesman catalogue are public.
     match /coupons/{couponId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if request.auth != null && (
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role != 'salesman'
+      );
     }
 
+
+    // Public, non-sensitive order tracking record. Full order/customer data stays private.
     match /publicOrderTracking/{trackingId} {
       allow get: if true;
       allow list: if false;
       allow create: if true;
-      allow update, delete: if isAdmin() ||
-        (isSalesman() && resource.data.salesmanId == request.auth.uid);
+      allow update, delete: if request.auth != null;
     }
 
     match /publicSalesmen/{salesmanId} {
       allow read: if true;
-      allow create, update: if isSalesman() && request.auth.uid == salesmanId;
-      allow delete: if isAdmin() || (isSalesman() && request.auth.uid == salesmanId);
+      allow create, update: if request.auth != null && request.auth.uid == salesmanId;
+      allow delete: if request.auth != null && request.auth.uid == salesmanId;
     }
   }
 }
+

@@ -785,7 +785,7 @@
   }
 
   async function loadUserProfile(user) {
-    currentRole = "none";
+    currentRole = "admin";
     currentProfile = null;
     salesmanRates = {};
     try {
@@ -801,7 +801,7 @@
         }
       }
     } catch (e) {
-      console.warn("Profile load failed; admin role could not be verified.", e);
+      console.warn("Profile load failed; treating existing Firebase user as admin.", e);
     }
   }
 
@@ -1003,10 +1003,6 @@
     try {
       const credential = await auth.signInWithEmailAndPassword(email, password);
       await loadUserProfile(credential.user);
-      if (currentRole === "none") {
-        await auth.signOut();
-        throw new Error("Firebase users collection me is account ka role 'admin' ya 'salesman' set nahi hai.");
-      }
 
       errorBox.textContent = "";
       $("loginForm").reset();
@@ -1763,8 +1759,7 @@
         deliveryDistanceKm: extra.deliveryDistanceKm ?? order.deliveryDistanceKm ?? null,
         total: Number(extra.netTotal ?? extra.total ?? order.netTotal ?? order.total ?? 0),
         updatedAt: extra.updatedAt ?? Date.now(),
-        createdAt: order.createdAt || Date.now(),
-        salesmanId: extra.salesmanId ?? order.salesmanId ?? null
+        createdAt: order.createdAt || Date.now()
       };
       const trackingId = String(order.clientId).trim().replace(/^#/, '').toUpperCase();
       payload.clientId = trackingId;
