@@ -708,3 +708,4 @@ body.order-open { overflow: hidden; }
 .admin-action-card b{display:block;font-size:.86rem}.admin-action-card small{display:block;margin-top:3px;color:#7a7269;font-size:.72rem;line-height:1.25}
 @media(max-width:900px){.admin-action-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.admin-action-strip{grid-template-columns:1fr}.admin-quickbar{padding:8px 10px}.admin-action-card{padding:11px}}
+

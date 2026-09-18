@@ -1,8 +1,43 @@
-CocoBiz V63 — restored admin panel + visual polish
+CocoBiz v20
 
-This package is based on the supplied CocoBiz V60 build. Existing customer/admin/salesman/order/coupon/dropshipping/settings/offer/wishlist functionality is preserved; no feature was intentionally removed.
+Dropshipping-ready storefront update:
+- Existing CocoBiz business/admin features retained.
+- Public store updated for Gifts, Chocolates and Kitchen products.
+- Added category filters: All, Gifts, Chocolates, Kitchen.
+- Added product category field in Admin -> Products.
+- Existing products without a category are treated as Gift by default.
+- Contact email changed to help.cocobiz@yahoo.com.
+- Product costPrice can continue to be used for supplier/landed cost tracking and profit calculation.
 
-Firebase project: cocobiz-d312b
-Firebase configuration files are included for project association. If you already deployed Firebase, you do NOT need to deploy again just to use these website files. Only deploy again if you later change Firebase Functions or Firestore rules.
 
-New visual/admin additions: admin cloud-status bar, refresh button, quick action cards, improved admin navigation labels and responsive styling.
+V22 updates:
+- PhonePe/static UPI QR integrated using provided QR image.
+- UPI ID default: kunalverma5555@ibl.
+- Customer can pay by QR or UPI App deep link and submit UTR. Admin verifies manually.
+- Platform fee can be enabled/disabled; disabled displays FREE/₹0.
+- Delivery charge + free delivery threshold remain configurable in Store Settings.
+- UPI/COD/Razorpay payment options can be enabled independently.
+
+
+V23 fixes: UPI QR is embedded directly in index.html to prevent broken-image errors after deployment. Admin Store Settings navigation now opens correctly. Added QR preview inside Store Settings.
+
+
+V26 CHANGE: Maximum delivery distance limit removed. Delivery is available at any distance. Within the configured free-delivery radius (default 10 km) delivery is FREE; beyond it, the configured delivery charge applies.
+
+
+V27 TRACK ORDER FIX
+- Customer tracking now reads a dedicated publicOrderTracking/{OrderID} document, so it works without admin login.
+- Mobile number is stored only as a SHA-256 hash for the tracking check.
+- New orders automatically create their tracking record.
+- Admin status/payment/return changes sync to the public tracking record.
+- IMPORTANT: deploy the updated Firestore rules before testing Track Order. Existing orders created before V27 may need to be recreated or synced by admin code.
+
+
+V61 Firebase security setup:
+1. Firebase Console -> Firestore Database -> Rules: replace the rules with the included firestore.rules and Publish.
+2. Firebase Console -> Firestore Database -> users: open the document whose ID is the Firebase Auth UID of your owner/admin login and set role = "admin".
+3. Salesman documents must keep role = "salesman".
+4. Do not create a public users document with role = "admin" for customers.
+5. Existing public customer checkout and product reads remain enabled; orders/customer data are now restricted.
+
+Important coupon note: the current checkout still reads coupon documents publicly. Do not put sensitive data such as payment credentials in coupons. For older private coupons, the existing privateCustomers phone list may still be visible until the private-coupon data is migrated to a server-side/hash-based validation system.
