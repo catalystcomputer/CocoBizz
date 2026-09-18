@@ -818,7 +818,12 @@
       const snap = await db.collection("users").doc(user.uid).get();
       if (snap.exists) {
         currentProfile = { id: snap.id, ...snap.data() };
-        if (currentProfile.role === "salesman") {
+        if (currentProfile.role === "admin") {
+          currentRole = "admin";
+          salesmanRates = {};
+          publicSalesmanId = "";
+          publicSalesmanProfile = null;
+        } else if (currentProfile.role === "salesman") {
           currentRole = "salesman";
           salesmanRates = currentProfile.rates || {};
           publicSalesmanId = user.uid;
@@ -2024,7 +2029,11 @@
 
     const saveCloud = async () => {
       data.mobileHash = await hashTrackingMobile(data.customer.number);
-      const ref = await db.collection("orders").add(data);
+      // Use the client order ID as the Firestore document ID. This makes retries
+      // idempotent and prevents duplicate orders when a mobile connection drops
+      // after Firestore accepted the write but before the browser got the response.
+      const ref = db.collection("orders").doc(data.clientId);
+      await ref.set(data, { merge: false });
       // Coupon redemption is finalized after the order exists. The callable uses a
       // Firestore transaction, so usage limits cannot be bypassed by simultaneous orders.
       if (appliedCoupon?.code) {
@@ -2166,7 +2175,8 @@
       try {
         const order = JSON.parse(localStorage.getItem(key));
         if (!order?.clientId) continue;
-        await db.collection("orders").add(order);
+        const ref = db.collection("orders").doc(order.clientId);
+        await ref.set(order, { merge: false });
         localStorage.removeItem(key);
         console.log("Pending order cloud sync ho gaya:", order.clientId);
       } catch (error) {
