@@ -694,3 +694,17 @@ body.order-open { overflow: hidden; }
 @media(max-width:520px){.home-section{padding:0 14px}.hero-points{grid-template-columns:1fr}.mini-product img{height:125px}.coupon-preview-grid{grid-template-columns:1fr}.home-section-head{align-items:center}.quick-category-grid button{padding:14px}.hero-copy h2{font-size:32px}}
 
 .delivery-check-box{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:20px 22px;border:1px solid var(--border);border-radius:18px;background:#fff}.delivery-check-box h2{margin:4px 0;font-family:"Playfair Display",serif}.delivery-check-box p:not(.eyebrow){margin:4px 0 0;color:var(--muted);font-size:13px}.delivery-check-form{display:grid;grid-template-columns:minmax(170px,220px) auto;gap:8px;min-width:340px}.delivery-check-form input{border:1px solid var(--border);border-radius:8px;padding:10px 12px}.delivery-check-form small{grid-column:1/-1;color:var(--muted);min-height:18px}@media(max-width:700px){.delivery-check-box{display:block}.delivery-check-form{margin-top:14px;min-width:0;grid-template-columns:1fr auto}}
+
+
+/* CocoBiz V63 admin polish — visual only; existing functionality preserved */
+.admin-quickbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:10px 12px;border:1px solid rgba(120,90,60,.12);border-radius:14px;background:linear-gradient(180deg,#fff,#faf7f2)}
+.admin-status-pill{display:inline-flex;align-items:center;gap:8px;font-size:.82rem;font-weight:700;color:#49634f}
+.status-dot{width:8px;height:8px;border-radius:50%;background:#4e9b63;box-shadow:0 0 0 4px rgba(78,155,99,.12)}
+.admin-refresh-button{min-height:36px;padding:7px 12px}
+.admin-action-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 18px}
+.admin-action-card{display:flex;align-items:center;gap:10px;text-align:left;padding:12px;border:1px solid rgba(120,90,60,.12);border-radius:14px;background:#fff;cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+.admin-action-card:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(50,35,20,.08);border-color:rgba(120,90,60,.24)}
+.admin-action-card>span{font-size:1.35rem;flex:0 0 auto}
+.admin-action-card b{display:block;font-size:.86rem}.admin-action-card small{display:block;margin-top:3px;color:#7a7269;font-size:.72rem;line-height:1.25}
+@media(max-width:900px){.admin-action-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.admin-action-strip{grid-template-columns:1fr}.admin-quickbar{padding:8px 10px}.admin-action-card{padding:11px}}

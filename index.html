@@ -175,16 +175,26 @@
         <button class="logout-button" id="logoutButton">Logout</button>
       </div>
 
+      <div class="admin-quickbar">
+        <div class="admin-status-pill"><span class="status-dot"></span><span id="adminSyncStatus">Cloud data connected</span></div>
+        <button class="secondary-button admin-refresh-button" type="button" id="adminRefreshButton">↻ Refresh</button>
+      </div>
       <div class="admin-tabs">
-        <button class="admin-tab active" id="dashboardTab">Dashboard</button>
-        <button class="admin-tab" id="saleTab">Self Sale</button>
-        <button class="admin-tab" id="productsTab">Products</button>
-        <button class="admin-tab" id="ordersTab">Orders <span id="orderCount">0</span></button>
-        <button class="admin-tab admin-only-tab" id="salesmenTab">Salesmen</button>
-        <button class="admin-tab admin-only-tab" id="offersTab">Offers</button>
-        <button class="admin-tab admin-only-tab" id="settingsTab">Store Settings</button>
-        <button class="admin-tab admin-only-tab" id="couponsTab">Coupons</button>
-        <button class="admin-tab admin-only-tab" id="dropshippingTab">Dropshipping</button>
+        <button class="admin-tab active" id="dashboardTab">📊 Dashboard</button>
+        <button class="admin-tab" id="saleTab">🧾 Self Sale</button>
+        <button class="admin-tab" id="productsTab">📦 Products</button>
+        <button class="admin-tab" id="ordersTab">🛍️ Orders <span id="orderCount">0</span></button>
+        <button class="admin-tab admin-only-tab" id="salesmenTab">👤 Salesmen</button>
+        <button class="admin-tab admin-only-tab" id="offersTab">🎁 Offers</button>
+        <button class="admin-tab admin-only-tab" id="settingsTab">⚙️ Store Settings</button>
+        <button class="admin-tab admin-only-tab" id="couponsTab">🏷️ Coupons</button>
+        <button class="admin-tab admin-only-tab" id="dropshippingTab">🚚 Dropshipping</button>
+      </div>
+      <div class="admin-action-strip">
+        <button type="button" class="admin-action-card" data-admin-action="products"><span>➕</span><div><b>Add / manage products</b><small>Price, stock, return & dropship</small></div></button>
+        <button type="button" class="admin-action-card" data-admin-action="orders"><span>📋</span><div><b>Manage orders</b><small>Accept, status, payment & bill</small></div></button>
+        <button type="button" class="admin-action-card" data-admin-action="coupons"><span>🏷️</span><div><b>Coupons</b><small>Public/private & offers</small></div></button>
+        <button type="button" class="admin-action-card" data-admin-action="settings"><span>⚙️</span><div><b>Store settings</b><small>Delivery, fee, UPI & QR</small></div></button>
       </div>
 
       <div id="dashboardPanel">

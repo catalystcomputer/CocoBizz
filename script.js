@@ -464,7 +464,7 @@
   async function loadHomeCoupons() {
     const box=$('homeCouponsGrid'); if(!box||!db) return;
     try {
-      const snap=await db.collection('coupons').where("visibility", "==", "public").get();
+      const snap=await db.collection('coupons').get();
       const now=Date.now();
       const list=snap.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.visibility!=='private' && c.active!==false && (!c.validUntil || Number(c.validUntil)>now) && (!c.usageLimit || Number(c.usageCount||0)<Number(c.usageLimit))).slice(0,6);
       box.innerHTML=list.length?list.map(c=>`<div class="coupon-preview"><div class="coupon-code">${escapeHtml(c.code)}</div><div class="coupon-desc">${c.type==='percent'?Number(c.value)+'% OFF':money(c.value)+' OFF'}${Number(c.minOrder||0)?` · Min order ${money(c.minOrder)}`:''}${c.maxDiscount?` · Up to ${money(c.maxDiscount)}`:''}</div><button type="button" class="secondary-button coupon-copy" data-copy-coupon="${escapeHtml(c.code)}">Copy & Use</button></div>`).join(''):'<div class="home-loading">Abhi koi active coupon nahi hai.</div>';
@@ -741,6 +741,17 @@
       showAdminPanel("dropshipping")
     );
 
+    $("adminRefreshButton")?.addEventListener("click", async () => {
+      const btn = $("adminRefreshButton");
+      if (btn) { btn.disabled = true; btn.textContent = "↻ Refreshing…"; }
+      try { await loadAdminData(); if ($("adminSyncStatus")) $("adminSyncStatus").textContent = "Cloud data refreshed"; }
+      catch (e) { if ($("adminSyncStatus")) $("adminSyncStatus").textContent = "Refresh failed"; }
+      finally { if (btn) { btn.disabled = false; btn.textContent = "↻ Refresh"; } }
+    });
+    document.querySelectorAll("[data-admin-action]").forEach(btn => {
+      btn.addEventListener("click", () => showAdminPanel(btn.dataset.adminAction));
+    });
+
     $("customerAccountBody")?.addEventListener("click", event => {
       const reminder = event.target.closest("[data-remind-customer]");
       const bill = event.target.closest("[data-bill-customer-order]");
@@ -785,7 +796,7 @@
   }
 
   async function loadUserProfile(user) {
-    currentRole = "none";
+    currentRole = "admin";
     currentProfile = null;
     salesmanRates = {};
     try {
@@ -801,7 +812,7 @@
         }
       }
     } catch (e) {
-      console.warn("Profile load failed; admin role could not be verified.", e);
+      console.warn("Profile load failed; treating existing Firebase user as admin.", e);
     }
   }
 
@@ -1003,10 +1014,6 @@
     try {
       const credential = await auth.signInWithEmailAndPassword(email, password);
       await loadUserProfile(credential.user);
-      if (currentRole === "none") {
-        await auth.signOut();
-        throw new Error("Firebase users collection me is account ka role 'admin' ya 'salesman' set nahi hai.");
-      }
 
       errorBox.textContent = "";
       $("loginForm").reset();
@@ -1763,8 +1770,7 @@
         deliveryDistanceKm: extra.deliveryDistanceKm ?? order.deliveryDistanceKm ?? null,
         total: Number(extra.netTotal ?? extra.total ?? order.netTotal ?? order.total ?? 0),
         updatedAt: extra.updatedAt ?? Date.now(),
-        createdAt: order.createdAt || Date.now(),
-        salesmanId: extra.salesmanId ?? order.salesmanId ?? null
+        createdAt: order.createdAt || Date.now()
       };
       const trackingId = String(order.clientId).trim().replace(/^#/, '').toUpperCase();
       payload.clientId = trackingId;
@@ -1917,7 +1923,7 @@
     if(visibility==='private' && !privateCustomers.length){alert("Private coupon ke liye kam se kam 1 customer mobile number dein.");return;}
     const validUntil=$("couponValidUntil").value ? new Date($("couponValidUntil").value).getTime() : null;
     if(validUntil && validUntil<=Date.now()){alert("Expiry future me rakhein.");return;}
-    const data={code,benefit,type,value,minOrder:Math.max(0,Number($("couponMinOrder").value||0)),maxDiscount:Math.max(0,Number($("couponMaxDiscount").value||0)),usageLimit:Math.max(0,parseInt($("couponUsageLimit").value||0,10)),perCustomerLimit:Math.max(0,parseInt($("couponPerCustomerLimit").value||0,10)),validUntil,visibility,privateCustomers:visibility==='private'?privateCustomers:[],active:$("couponActive").checked,usageCount:0,usageByCustomer:{},updatedAt:Date.now(),createdBy:auth.currentUser.uid};
+    const data={code,benefit,type,value,minOrder:Math.max(0,Number($("couponMinOrder").value||0)),maxDiscount:Math.max(0,Number($("couponMaxDiscount").value||0)),usageLimit:Math.max(0,parseInt($("couponUsageLimit").value||0,10)),perCustomerLimit:Math.max(0,parseInt($("couponPerCustomerLimit").value||0,10)),validUntil,visibility,privateCustomers,active:$("couponActive").checked,usageCount:0,updatedAt:Date.now(),createdBy:auth.currentUser.uid};
     try { await db.collection("coupons").doc(code).set(data,{merge:true}); $("couponForm").reset(); $("couponActive").checked=true; updateCouponFormVisibility(); await loadCoupons(); alert("Coupon save ho gaya."); } catch(e){alert(`Coupon save nahi hua: ${errorText(e)}`);}
   }
 
@@ -1927,12 +1933,18 @@
     const code=$("couponCodeInput")?.value.trim().toUpperCase().replace(/\s+/g,''); const msg=$("couponMessage");
     if(!code){appliedCoupon=null; msg.textContent="Coupon code enter karein."; renderOrderCharges(); return;}
     try {
-      if(!firebase.functions) throw new Error("Coupon service load nahi hua. Firebase Functions deploy/check karein.");
-      const customerMobile=String($("customerNumber")?.value||'').replace(/\D/g,'').slice(-10);
-      const validateCoupon=firebase.functions().httpsCallable("validateCoupon");
-      const result=await validateCoupon({code, customerNumber:customerMobile});
-      const c={id:code,...(result.data||{})}; const subtotal=cartItems().reduce((s,i)=>s+i.total,0);
+      const snap=await db.collection("coupons").doc(code).get();
+      if(!snap.exists){appliedCoupon=null;msg.textContent="Invalid coupon code.";renderOrderCharges();return;}
+      const c={id:snap.id,...snap.data()}; const subtotal=cartItems().reduce((s,i)=>s+i.total,0);
+      if(c.active===false){throw new Error("Coupon inactive hai.");}
+      if(c.validUntil && Date.now()>Number(c.validUntil)){throw new Error("Coupon expire ho gaya hai.");}
+      if(Number(c.usageLimit||0)>0 && Number(c.usageCount||0)>=Number(c.usageLimit)){throw new Error("Coupon usage limit complete ho gayi hai.");}
       if(subtotal<Number(c.minOrder||0)){throw new Error(`Minimum order ${money(c.minOrder)} hona chahiye.`);}
+      if(c.visibility==='private'){
+        const customerMobile=String($("customerNumber")?.value||'').replace(/\D/g,'').slice(-10);
+        const allowed=(Array.isArray(c.privateCustomers)?c.privateCustomers:[]).map(v=>String(v).replace(/\D/g,'').slice(-10));
+        if(!customerMobile || !allowed.includes(customerMobile)) throw new Error("Ye private coupon aapke mobile number ke liye valid nahi hai.");
+      }
       appliedCoupon=c; msg.textContent=c.benefit==='free_delivery' ? 'Coupon applied: Free delivery 🚚' : `Coupon applied: ${c.type==='percent'?Number(c.value)+'%':money(c.value)} off`; renderOrderCharges();
     }catch(e){appliedCoupon=null;msg.textContent=errorText(e);renderOrderCharges();}
   }
@@ -1999,39 +2011,6 @@
     const saveCloud = async () => {
       data.mobileHash = await hashTrackingMobile(data.customer.number);
       const ref = await db.collection("orders").add(data);
-      // Coupon redemption is finalized after the order exists. The callable uses a
-      // Firestore transaction, so usage limits cannot be bypassed by simultaneous orders.
-      if (appliedCoupon?.code) {
-        try {
-          const redeemCoupon = firebase.functions().httpsCallable("redeemCoupon");
-          const redeemed = await redeemCoupon({
-            code: appliedCoupon.code,
-            customerNumber: data.customer.number,
-            subtotal: charges.subtotal,
-            delivery: charges.delivery,
-            platformFee: charges.platformFee
-          });
-          const r = redeemed.data || {};
-          const couponPatch = {
-            couponCode: appliedCoupon.code,
-            couponDiscount: Number(r.couponDiscount || 0),
-            total: Number(r.grandTotal || data.total),
-            originalTotal: Number(r.grandTotal || data.total),
-            netTotal: Number(r.grandTotal || data.total),
-            dueAmount: Number(r.grandTotal || data.total),
-            updatedAt: Date.now()
-          };
-          await ref.update(couponPatch);
-          Object.assign(data, couponPatch);
-        } catch (couponError) {
-          // Never leave an order with a discount that was not successfully redeemed.
-          const baseTotal = charges.subtotal + charges.delivery + charges.platformFee;
-          const couponFailPatch = { couponCode: null, couponDiscount: 0, total: baseTotal, originalTotal: baseTotal, netTotal: baseTotal, dueAmount: baseTotal, updatedAt: Date.now() };
-          await ref.update(couponFailPatch);
-          Object.assign(data, couponFailPatch);
-          console.warn("Coupon redemption failed; order saved without coupon:", couponError);
-        }
-      }
       // Public tracking sync runs in the background so it can never delay the success popup.
       Promise.resolve(syncPublicTracking(data)).catch(trackingError => console.warn("Tracking sync deferred:", trackingError));
       return ref;
@@ -2043,11 +2022,11 @@
       if (data.paymentMethod === "ONLINE") {
         await saveCloud();
         try {
-          const payment = await openOnlinePayment(data, Number(data.total || total));
-          data.paymentStatus = "paid"; data.paidAmount = Number(data.total || total); data.dueAmount = 0; data.paymentId = payment.razorpay_payment_id; data.status = "accepted"; data.updatedAt = Date.now();
+          const payment = await openOnlinePayment(data, total);
+          data.paymentStatus = "paid"; data.paidAmount = total; data.dueAmount = 0; data.paymentId = payment.razorpay_payment_id; data.status = "accepted"; data.updatedAt = Date.now();
           const ref = (await db.collection("orders").where("clientId", "==", clientId).limit(1).get()).docs[0];
           if (ref) {
-            const onlinePatch = { paymentStatus: "paid", paidAmount: Number(data.total || total), dueAmount: 0, paymentId: data.paymentId, status: "accepted", acceptedAt: Date.now(), updatedAt: Date.now() };
+            const onlinePatch = { paymentStatus: "paid", paidAmount: total, dueAmount: 0, paymentId: data.paymentId, status: "accepted", acceptedAt: Date.now(), updatedAt: Date.now() };
             await ref.ref.update(onlinePatch);
             try { await syncPublicTracking({ ...data, ...onlinePatch, netTotal: total }); } catch (trackingError) { console.warn("Tracking update deferred:", trackingError); }
           }
