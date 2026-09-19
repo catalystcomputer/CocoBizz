@@ -1,12 +1,18 @@
 (() => {
   "use strict";
 
-  // Supabase backend configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyBLa7GaDNA8hXoXwlF-MKAl44cFpD-oIUE",
+    authDomain: "cocobiz-d312b.firebaseapp.com",
+    projectId: "cocobiz-d312b",
+    storageBucket: "cocobiz-d312b.firebasestorage.app",
+    messagingSenderId: "778317819430",
+    appId: "1:778317819430:web:08f37685973d4c4acac0e7"
+  };
+
   const SUPABASE_URL = "https://dcbxntolnismscmurfop.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjYnhudG9sbmlzbXNjbXVyZm9wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3MzIzMTMsImV4cCI6MjEwNTMwODMxM30.UJLdMgYaC8dDIaMW63zRLzh1VzZn7E8b703BveuiYYI";
-
   let supabaseClient = null;
-
 
   const WHATSAPP_NUMBER = "917463928290";
   const $ = id => document.getElementById(id);
@@ -290,7 +296,75 @@
     });
   }
 
-  // Firestore-compatible adapter backed by Supabase Postgres. This lets the existing\n  // CocoBiz UI keep its feature code while its business data moves to Supabase.\n  function makeDoc(table, row) {\n    const data = row?.data || {};\n    const id = row?.id ?? data.id;\n    return {\n      id, exists: !!row, data: () => ({ ...data }),\n      ref: makeDocRef(table, id)\n    };\n  }\n  function makeSnap(rows) {\n    const docs = (rows || []).map(r => makeDoc(tableNameFromRow(r), r));\n    return { docs, empty: docs.length === 0, size: docs.length, forEach: fn => docs.forEach(fn) };\n  }\n  function tableNameFromRow(r) { return r.__table || ""; }\n  function makeDocRef(table, id) {\n    return {\n      async get() { const {data,error}=await supabaseClient.from(table).select('*').eq('id',id).maybeSingle(); if(error) throw error; return makeDoc(table,{id,data}); },\n      async set(value, options={}) {\n        const row={...value,id};\n        const {data,error}=await supabaseClient.from(table).upsert(row,{onConflict:'id'}).select('*').single(); if(error) throw error; return makeDoc(table,{id:data.id,data});\n      },\n      async update(value) {\n        const {data,error}=await supabaseClient.from(table).update(value).eq('id',id).select('*').single(); if(error) throw error; return makeDoc(table,{id:data.id,data});\n      },\n      async delete() { const {error}=await supabaseClient.from(table).delete().eq('id',id); if(error) throw error; }\n    };\n  }\n  function makeCollection(table) {\n    const state={filters:[], limit:null, order:null};\n    const api={\n      where(field,op,value){ state.filters.push([field,op,value]); return api; },\n      limit(n){ state.limit=n; return api; },\n      orderBy(field,dir='asc'){ state.order=[field,dir]; return api; },\n      doc(id){ return makeDocRef(table, table==='store_settings' && id==='store' ? 'main' : id); },\n      async add(value){\n        const id = value.id || (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `CB-${Date.now()}-${Math.random().toString(36).slice(2,9)}`);\n        const row={...value,id};\n        const {data,error}=await supabaseClient.from(table).insert(row).select('*').single(); if(error) throw error;\n        return makeDocRef(table,data.id);\n      },\n      async get(){\n        let q=supabaseClient.from(table).select('*');\n        for(const [field,op,value] of state.filters){\n          if(op==='==') q=q.eq(field,value);\n          else if(op==='!=') q=q.neq(field,value);\n          else if(op==='>') q=q.gt(field,value);\n          else if(op==='>=') q=q.gte(field,value);\n          else if(op==='<') q=q.lt(field,value);\n          else if(op==='<=' ) q=q.lte(field,value);\n          else q=q.eq(field,value);\n        }\n        if(state.order) q=q.order(state.order[0],{ascending:state.order[1]!=='desc'});\n        if(state.limit!=null) q=q.limit(state.limit);\n        const {data,error}=await q; if(error) throw error;\n        const rows=(data||[]).map(x=>({...x,__table:table}));\n        return {docs:rows.map(r=>makeDoc(table,{id:r.id,data:r})),empty:rows.length===0,size:rows.length,forEach:fn=>rows.map(r=>makeDoc(table,{id:r.id,data:r})).forEach(fn)};\n      }\n    };\n    return api;\n  }\n  const supaTable = name => name === 'settings' ? 'store_settings' : name;\n\n  async function initFirebase() {\n    if (!window.supabase) {\n      await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2');\n    }\n    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true } });\n    // Keep the existing auth variable compatible while database operations use Supabase.\n    // Firebase Auth is loaded only as a temporary login bridge until Supabase Auth users are migrated.\n    if (!window.firebase) {\n      await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');\n      await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js');\n      await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js');\n    }\n    if (!firebase.apps.length) {\n      firebase.initializeApp({apiKey:'AIzaSyBLa7GaDNA8hXoXwlF-MKAl44cFpD-oIUE',authDomain:'cocobiz-d312b.firebaseapp.com',projectId:'cocobiz-d312b',storageBucket:'cocobiz-d312b.firebasestorage.app',messagingSenderId:'778317819430',appId:'1:778317819430:web:08f37685973d4c4acac0e7'});\n    }\n    auth=firebase.auth();\n    try { await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); } catch(e) {}\n    db={ collection: name => makeCollection(supaTable(name)) };\n  }\n
+  async function initSupabaseMirror() {
+    try {
+      if (!window.supabase) await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2");
+      if (window.supabase?.createClient) {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      }
+    } catch (e) {
+      console.warn("Supabase mirror unavailable; Firebase remains active:", e);
+      supabaseClient = null;
+    }
+  }
+
+  async function mirrorOrderToSupabase(order) {
+    if (!supabaseClient || !order?.clientId) return;
+    try {
+      const c = order.customer || {};
+      await supabaseClient.from("orders").upsert({
+        id: String(order.clientId),
+        customer_name: c.name || "",
+        customer_mobile: c.number || "",
+        customer_address: c.address || "",
+        items: order.items || [],
+        subtotal: Number(order.subtotal || 0),
+        delivery_charge: Number(order.deliveryCharge || 0),
+        platform_fee: Number(order.platformFee || 0),
+        coupon_code: order.couponCode || null,
+        coupon_discount: Number(order.couponDiscount || 0),
+        total: Number(order.total || 0),
+        payment_method: order.paymentMethod || "COD",
+        payment_status: order.paymentStatus || "pending",
+        status: order.status || "pending",
+        salesman_id: order.salesmanId || null,
+        tracking_id: order.clientId || null,
+        return_items: order.returns || [],
+        payment_history: order.paymentHistory || [],
+        created_at: new Date(Number(order.createdAt || Date.now())).toISOString(),
+        updated_at: new Date().toISOString()
+      }, { onConflict: "id" });
+    } catch (e) {
+      console.warn("Supabase order mirror failed; Firebase order is still safe:", e);
+    }
+  }
+
+  async function initFirebase() {
+    if (!window.firebase) {
+      await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
+      await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js");
+      await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js");
+      await loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js");
+    }
+
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+
+    auth = firebase.auth();
+    db = firebase.firestore();
+    try {
+      await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+    } catch (e) {
+      console.warn("Firebase persistence set nahi ho saka:", e);
+    }
+    try {
+      await db.enablePersistence({ synchronizeTabs: true });
+    } catch (e) {
+      console.warn("Firestore offline persistence:", e?.code || e?.message || e);
+    }
+  }
+
   function placeholderImage() {
     return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="600" height="400">
@@ -1983,7 +2057,10 @@
 
     const saveCloud = async () => {
       data.mobileHash = await hashTrackingMobile(data.customer.number);
-      const ref = await db.collection("orders").doc(clientId).set(data, {merge:true});
+      const ref = await db.collection("orders").add(data);
+      // Firebase remains the live source of truth in this transition build.
+      // Supabase receives a safe secondary copy without blocking checkout.
+      mirrorOrderToSupabase(data);
       // Public tracking sync runs in the background so it can never delay the success popup.
       Promise.resolve(syncPublicTracking(data)).catch(trackingError => console.warn("Tracking sync deferred:", trackingError));
       return ref;
@@ -2089,7 +2166,7 @@
       try {
         const order = JSON.parse(localStorage.getItem(key));
         if (!order?.clientId) continue;
-        await db.collection("orders").doc(order.clientId).set(order, {merge:true});
+        await db.collection("orders").add(order);
         localStorage.removeItem(key);
         console.log("Pending order cloud sync ho gaya:", order.clientId);
       } catch (error) {
@@ -2895,6 +2972,7 @@
 
   async function start() {
     bindEvents();
+    initSupabaseMirror();
 
     try {
       await initFirebase();
