@@ -309,34 +309,55 @@
   }
 
   async function mirrorOrderToSupabase(order) {
-    if (!supabaseClient || !order?.clientId) return;
-    try {
-      const c = order.customer || {};
-      await supabaseClient.from("orders").upsert({
-        id: String(order.clientId),
-        customer_name: c.name || "",
-        customer_mobile: c.number || "",
-        customer_address: c.address || "",
-        items: order.items || [],
-        subtotal: Number(order.subtotal || 0),
-        delivery_charge: Number(order.deliveryCharge || 0),
-        platform_fee: Number(order.platformFee || 0),
-        coupon_code: order.couponCode || null,
-        coupon_discount: Number(order.couponDiscount || 0),
-        total: Number(order.total || 0),
-        payment_method: order.paymentMethod || "COD",
-        payment_status: order.paymentStatus || "pending",
-        status: order.status || "pending",
-        salesman_id: order.salesmanId || null,
-        tracking_id: order.clientId || null,
-        return_items: order.returns || [],
-        payment_history: order.paymentHistory || [],
-        created_at: new Date(Number(order.createdAt || Date.now())).toISOString(),
-        updated_at: new Date().toISOString()
-      }, { onConflict: "id" });
-    } catch (e) {
-      console.warn("Supabase order mirror failed; Firebase order is still safe:", e);
+    if (!supabaseClient || !order?.clientId) return { ok: false, skipped: true };
+    const c = order.customer || {};
+    const row = {
+      id: String(order.clientId),
+      client_id: String(order.clientId),
+      customer: c,
+      items: order.items || [],
+      returns: order.returns || [],
+      subtotal: Number(order.subtotal || 0),
+      delivery_charge: Number(order.deliveryCharge || 0),
+      platform_fee: Number(order.platformFee || 0),
+      coupon_code: order.couponCode || null,
+      coupon_discount: Number(order.couponDiscount || 0),
+      total: Number(order.total || 0),
+      original_total: Number(order.originalTotal || order.total || 0),
+      returned_total: Number(order.returnedTotal || 0),
+      net_total: Number(order.netTotal || order.total || 0),
+      paid_amount: Number(order.paidAmount || 0),
+      due_amount: Number(order.dueAmount ?? order.total ?? 0),
+      payment_method: order.paymentMethod || "COD",
+      payment_status: order.paymentStatus || "pending",
+      payment_history: order.paymentHistory || [],
+      status: order.status || "pending",
+      salesman_id: order.salesmanId || null,
+      salesman_name: order.salesmanName || null,
+      salesman_number: order.salesmanNumber || null,
+      delivery_estimate: order.deliveryEstimate || null,
+      delivery_distance_km: order.deliveryDistanceKm == null ? null : Number(order.deliveryDistanceKm),
+      mobile_hash: order.mobileHash || null,
+      utr: order.utr || null,
+      payment_id: order.paymentId || null,
+      source: order.source || "online",
+      date: order.date || new Date(Number(order.createdAt || Date.now())).toLocaleString("en-IN"),
+      created_at: Number(order.createdAt || Date.now()),
+      updated_at: Number(order.updatedAt || Date.now())
+    };
+
+    const { data, error } = await supabaseClient
+      .from("orders")
+      .upsert(row, { onConflict: "id" })
+      .select("id,client_id")
+      .single();
+
+    if (error) {
+      console.error("Supabase order save failed:", error);
+      throw error;
     }
+    console.log("CocoBiz: order saved to Supabase:", data);
+    return { ok: true, data };
   }
 
   async function initFirebase() {
@@ -2058,9 +2079,14 @@
     const saveCloud = async () => {
       data.mobileHash = await hashTrackingMobile(data.customer.number);
       const ref = await db.collection("orders").add(data);
-      // Firebase remains the live source of truth in this transition build.
-      // Supabase receives a safe secondary copy without blocking checkout.
-      mirrorOrderToSupabase(data);
+      // Firebase remains the live source of truth during the transition.
+      // Wait for the Supabase mirror so the test order is actually confirmed in Supabase.
+      try {
+        await mirrorOrderToSupabase(data);
+      } catch (supabaseError) {
+        // Do not cancel a successful customer order if the secondary mirror is unavailable.
+        console.warn("Supabase mirror failed; Firebase order remains saved:", supabaseError);
+      }
       // Public tracking sync runs in the background so it can never delay the success popup.
       Promise.resolve(syncPublicTracking(data)).catch(trackingError => console.warn("Tracking sync deferred:", trackingError));
       return ref;
