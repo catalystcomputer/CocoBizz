@@ -301,6 +301,9 @@
       if (!window.supabase) await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2");
       if (window.supabase?.createClient) {
         supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        console.log("CocoBiz: Supabase client initialized");
+      } else {
+        throw new Error("Supabase JS client could not be loaded");
       }
     } catch (e) {
       console.warn("Supabase mirror unavailable; Firebase remains active:", e);
@@ -346,18 +349,19 @@
       updated_at: Number(order.updatedAt || Date.now())
     };
 
-    const { data, error } = await supabaseClient
+    // Do not call .select() here: the storefront is intentionally not granted
+    // public SELECT access to orders. ignoreDuplicates keeps retries safe without
+    // requiring a public UPDATE/SELECT policy.
+    const { error } = await supabaseClient
       .from("orders")
-      .upsert(row, { onConflict: "id" })
-      .select("id,client_id")
-      .single();
+      .upsert(row, { onConflict: "id", ignoreDuplicates: true });
 
     if (error) {
       console.error("Supabase order save failed:", error);
       throw error;
     }
-    console.log("CocoBiz: order saved to Supabase:", data);
-    return { ok: true, data };
+    console.log("CocoBiz: order write accepted by Supabase:", row.id);
+    return { ok: true, id: row.id };
   }
 
   async function initFirebase() {
@@ -2998,7 +3002,7 @@
 
   async function start() {
     bindEvents();
-    initSupabaseMirror();
+    await initSupabaseMirror();
 
     try {
       await initFirebase();
